@@ -1,0 +1,51 @@
+# Topics and Privileges Configuration
+
+topics:
+  monterra:
+    description: "Monterra events topic"
+    patterns:
+      - "monterra.>"
+    permissions:
+      read:
+        - "ext_reader"
+        - "int_reader"
+      write:
+        - "ext_writer"
+        - "int_writer"
+
+  pact_update:
+    description: "Pact update events topic"
+    patterns:
+      - "pact_update.>"
+    permissions:
+      read:
+        - "ext_reader"
+        - "int_reader"
+      write:
+        - "ext_writer"
+        - "int_writer"
+
+roles:
+  ext_reader:
+    description: "EXT network message reader"
+    topics:
+      - "monterra"
+      - "pact_update"
+
+  ext_writer:
+    description: "EXT network message writer"
+    topics:
+      - "monterra"
+      - "pact_update"
+
+  int_reader:
+    description: "INT network message reader"
+    topics:
+      - "monterra"
+      - "pact_update"
+
+  int_writer:
+    description: "INT network message writer"
+    topics:
+      - "monterra"
+      - "pact_update"

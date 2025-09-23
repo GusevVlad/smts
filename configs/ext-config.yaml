@@ -1,0 +1,59 @@
+# EXT SMTS Configuration
+deployment:
+  type: "ext"
+  name: "smts-ext-prod"
+  environment: "production"
+
+nats:
+  embedded: true
+  host: "localhost"
+  port: 4222
+  stream:
+    name: "SMTS_EXT"
+    subjects: ["monterra.>", "pact_update.>"]
+    retention: "workqueue"
+    max_age: "24h"
+    storage: "file"
+    replicas: 1
+  consumer:
+    durable_name: "SMTS_EXT_CONSUMER"
+    ack_policy: "explicit"
+    deliver_policy: "all"
+
+api:
+  base_url: "https://api.corporate.com"
+  timeout: "30s"
+  retry:
+    max_attempts: 3
+    backoff: "2s"
+  auth:
+    type: "api_key"
+    api_key: "${API_KEY}"
+
+dlp:
+  enabled: false
+  endpoint: "https://dlp.corporate.com/validate"
+  timeout: "10s"
+  retry:
+    max_attempts: 2
+    backoff: "1s"
+
+artemis:
+  enabled: false
+  host: "artemis.corporate.com"
+  port: 61616
+  queue: "SMTS_INT_QUEUE"
+  username: "${ARTEMIS_USER}"
+  password: "${ARTEMIS_PASSWORD}"
+
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+
+health:
+  port: 8080
+  path: "/health"
+  interval: "30s"
+
+# Topics configuration will be loaded from separate topics.yaml file
