@@ -44,13 +44,15 @@ func (c *Consumer) Start(ctx context.Context) error {
 	}
 
 	// Create or get the consumer
-	consumer, err := c.getOrCreateConsumer()
+	js, err := c.getOrCreateConsumer()
 	if err != nil {
 		return err
 	}
 
 	// Subscribe to the consumer
-	sub, err := consumer.Consume(c.handleMessage, 
+	sub, err := js.Subscribe("", c.handleMessage,
+		nats.BindStream(c.stream),
+		nats.Durable(c.config.DurableName),
 		nats.AckWait(30*time.Second),
 		nats.MaxAckPending(100),
 		nats.DeliverNew(),
@@ -60,7 +62,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 	}
 
 	c.subscription = sub
-	c.logger.Info("Consumer started", 
+	c.logger.Info("Consumer started",
 		zap.String("stream", c.stream),
 		zap.String("consumer", c.config.DurableName))
 

@@ -10,6 +10,18 @@ import (
 	"go.uber.org/zap"
 )
 
+// NATSClient defines the interface for NATS operations
+type NATSClient interface {
+	CreateStream(streamConfig *types.StreamConfig) error
+	GetStreamInfo(streamName string) (*nats.StreamInfo, error)
+	DeleteStream(streamName string) error
+	HealthCheck(ctx context.Context) error
+	Close()
+	GetJetStream() nats.JetStreamContext
+	GetConnection() *nats.Conn
+	IsConnected() bool
+}
+
 // Client represents a NATS JetStream client
 type Client struct {
 	conn      *nats.Conn
@@ -77,7 +89,7 @@ func (c *Client) connect() error {
 	c.conn = conn
 
 	// Set up connection event handlers
-	c.conn.SetDisconnectHandler(func(nc *nats.Conn, err error) {
+	c.conn.SetDisconnectErrHandler(func(nc *nats.Conn, err error) {
 		c.logger.Warn("NATS connection disconnected", zap.Error(err))
 	})
 

@@ -81,7 +81,7 @@ func (p *Publisher) PublishRaw(topic string, data []byte, headers map[string]str
 
 	// Create a message with the raw data
 	msg := &types.Message{
-		ID:        types.GenerateID(),
+		ID:        GenerateID(),
 		Timestamp: time.Now().UTC(),
 		Topic:     topic,
 		Source:    "smts-publisher",
@@ -125,7 +125,7 @@ func (p *Publisher) validateMessage(msg *types.Message) error {
 }
 
 // GetStreamStats returns statistics for a stream
-func (p *Publisher) GetStreamStats(streamName string) (*nats.StreamStats, error) {
+func (p *Publisher) GetStreamStats(streamName string) (*nats.StreamState, error) {
 	if p.client == nil || p.client.js == nil {
 		return nil, types.NewSMTSError(types.ErrNATSStream, "NATS client not initialized")
 	}

@@ -13,6 +13,13 @@ import (
 	"go.uber.org/zap"
 )
 
+// APIClient defines the interface for corporate API operations
+type APIClient interface {
+	DeliverMessage(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error)
+	ValidateMessage(ctx context.Context, msg *types.Message) (*types.DLPValidationResponse, error)
+	HealthCheck(ctx context.Context) error
+}
+
 // Client represents a corporate API client
 type Client struct {
 	client  *resty.Client
@@ -87,9 +94,9 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 
 	err = utils.Retry(ctx, retryConfig, func(attempt int) error {
 		c.logger.Debug("Sending message to corporate API",
-			utils.LoggerFields(operation, "", msg.ID, msg.Topic)...,
-			zap.Int("attempt", attempt),
-			zap.String("endpoint", endpoint))
+			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+				zap.Int("attempt", attempt),
+				zap.String("endpoint", endpoint))...)
 
 		resp, err = request.Post(endpoint)
 		if err != nil {
@@ -123,9 +130,9 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 
 	if err != nil {
 		c.logger.Error("Failed to deliver message",
-			utils.LoggerFields(operation, "", msg.ID, msg.Topic)...,
-			utils.WithError(err),
-			utils.WithDuration(duration))
+			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+				utils.WithError(err),
+				utils.WithDuration(duration))...)
 
 		return &types.DeliveryResult{
 			Success:    false,
@@ -136,9 +143,9 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 	}
 
 	c.logger.Info("Message delivered successfully",
-		utils.LoggerFields(operation, "", msg.ID, msg.Topic)...,
-		zap.Int("status_code", resp.StatusCode()),
-		utils.WithDuration(duration))
+		append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+			zap.Int("status_code", resp.StatusCode()),
+			utils.WithDuration(duration))...)
 
 	return &types.DeliveryResult{
 		Success:   true,
@@ -185,8 +192,8 @@ func (c *Client) ValidateMessage(ctx context.Context, msg *types.Message) (*type
 
 	err = utils.Retry(ctx, retryConfig, func(attempt int) error {
 		c.logger.Debug("Sending message for DLP validation",
-			utils.LoggerFields(operation, "", msg.ID, msg.Topic)...,
-			zap.Int("attempt", attempt))
+			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+				zap.Int("attempt", attempt))...)
 
 		resp, err = request.Post(endpoint)
 		if err != nil {
@@ -219,9 +226,9 @@ func (c *Client) ValidateMessage(ctx context.Context, msg *types.Message) (*type
 
 	if err != nil {
 		c.logger.Error("Failed to validate message",
-			utils.LoggerFields(operation, "", msg.ID, msg.Topic)...,
-			utils.WithError(err),
-			utils.WithDuration(duration))
+			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+				utils.WithError(err),
+				utils.WithDuration(duration))...)
 
 		return nil, err
 	}
@@ -230,24 +237,24 @@ func (c *Client) ValidateMessage(ctx context.Context, msg *types.Message) (*type
 	var dlpResponse types.DLPValidationResponse
 	if err := json.Unmarshal(resp.Body(), &dlpResponse); err != nil {
 		c.logger.Error("Failed to parse DLP validation response",
-			utils.LoggerFields(operation, "", msg.ID, msg.Topic)...,
-			utils.WithError(err))
+			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+				utils.WithError(err))...)
 
 		return nil, types.WrapSMTSError(err, types.ErrDLPValidation, "Failed to parse DLP validation response")
 	}
 
 	if !dlpResponse.Approved {
 		c.logger.Warn("Message rejected by DLP validation",
-			utils.LoggerFields(operation, "", msg.ID, msg.Topic)...,
-			zap.Strings("reasons", dlpResponse.Reasons),
-			utils.WithDuration(duration))
+			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+				zap.Strings("reasons", dlpResponse.Reasons),
+				utils.WithDuration(duration))...)
 
 		return &dlpResponse, types.NewSMTSError(types.ErrDLPValidation, "Message rejected by DLP validation")
 	}
 
 	c.logger.Info("Message approved by DLP validation",
-		utils.LoggerFields(operation, "", msg.ID, msg.Topic)...,
-		utils.WithDuration(duration))
+		append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+			utils.WithDuration(duration))...)
 
 	return &dlpResponse, nil
 }

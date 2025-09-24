@@ -1,0 +1,83 @@
+# EXT SMTS Test Configuration
+deployment:
+  type: "ext"
+  name: "smts-ext-test"
+  environment: "test"
+
+nats:
+  embedded: true
+  host: "localhost"
+  port: 14222  # Different port to avoid conflicts
+  stream:
+    name: "SMTS_EXT_TEST"
+    subjects: ["test.monterra.>", "test.pact_update.>"]
+    retention: "workqueue"
+    max_age: "1h"
+    storage: "memory"  # Use memory for faster tests
+    replicas: 1
+  consumer:
+    durable_name: "SMTS_EXT_TEST_CONSUMER"
+    ack_policy: "explicit"
+    deliver_policy: "all"
+
+api:
+  base_url: "http://localhost:18080"  # Test server will run here
+  timeout: "10s"
+  retry:
+    max_attempts: 2
+    backoff: "1s"
+  auth:
+    type: "api_key"
+    api_key: "test-api-key"
+
+dlp:
+  enabled: false
+  endpoint: "http://localhost:18080/validate"
+  timeout: "5s"
+  retry:
+    max_attempts: 1
+    backoff: "1s"
+
+artemis:
+  enabled: false
+  host: "localhost"
+  port: 16161  # Different port for test
+  queue: "SMTS_TEST_QUEUE"
+  username: "test"
+  password: "test"
+
+logging:
+  level: "debug"
+  format: "console"
+  output: "stdout"
+
+health:
+  port: 18081  # Different port to avoid conflicts
+  path: "/health"
+  interval: "10s"
+
+# Test topics configuration
+topics:
+  topics:
+    test.monterra.event:
+      topic: "test.monterra.event"
+      read_roles: ["ext_reader"]
+      write_roles: ["ext_writer"]
+      description: "Test monterra events"
+    
+    test.pact_update.event:
+      topic: "test.pact_update.event"
+      read_roles: ["ext_reader"]
+      write_roles: ["ext_writer"]
+      description: "Test pact update events"
+  
+  roles:
+    ext_reader:
+      name: "ext_reader"
+      description: "EXT network message reader"
+      topics: ["test.monterra.event", "test.pact_update.event"]
+    
+    ext_writer:
+      name: "ext_writer"
+      description: "EXT network message writer"
+      topics: ["test.monterra.event", "test.pact_update.event"]

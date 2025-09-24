@@ -14,14 +14,14 @@ import (
 // Processor handles message processing for SMTS
 type Processor struct {
 	config      *types.Config
-	apiClient   *api.Client
-	natsClient  *nats.Client
+	apiClient   api.APIClient
+	natsClient  nats.NATSClient
 	logger      *zap.Logger
 	deployment  string
 }
 
 // NewProcessor creates a new message processor
-func NewProcessor(config *types.Config, apiClient *api.Client, natsClient *nats.Client, logger *zap.Logger) *Processor {
+func NewProcessor(config *types.Config, apiClient api.APIClient, natsClient nats.NATSClient, logger *zap.Logger) *Processor {
 	return &Processor{
 		config:     config,
 		apiClient:  apiClient,
@@ -37,10 +37,10 @@ func (p *Processor) HandleMessage(ctx context.Context, msg *types.Message) (*typ
 	startTime := time.Now()
 
 	// Validate message permissions
-	if err := p.validatePermissions(msg); err != nil {
+	if err := p.ValidatePermissions(msg); err != nil {
 		p.logger.Warn("Message permission validation failed",
-			utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic)...,
-			utils.WithError(err))
+			append(utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic),
+				utils.WithError(err))...)
 
 		return &types.DeliveryResult{
 			Success:    false,
@@ -60,26 +60,32 @@ func (p *Processor) HandleMessage(ctx context.Context, msg *types.Message) (*typ
 	case "int":
 		result, err = p.processINTMessage(ctx, msg)
 	default:
-		err = types.NewSMTSError(types.ErrMessageRouting, 
+		err = types.NewSMTSError(types.ErrMessageRouting,
 			"Unknown deployment type: "+p.deployment)
+		result = &types.DeliveryResult{
+			Success:    false,
+			MessageID:  msg.ID,
+			Timestamp:  time.Now().UTC(),
+			Error:      err.Error(),
+		}
 	}
 
 	duration := time.Since(startTime).Milliseconds()
 
 	if err != nil {
 		p.logger.Error("Message processing failed",
-			utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic)...,
-			utils.WithError(err),
-			utils.WithDuration(duration))
+			append(utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic),
+				utils.WithError(err),
+				utils.WithDuration(duration))...)
 	} else if result.Success {
 		p.logger.Info("Message processed successfully",
-			utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic)...,
-			utils.WithDuration(duration))
+			append(utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic),
+				utils.WithDuration(duration))...)
 	} else {
 		p.logger.Warn("Message processing completed with failure",
-			utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic)...,
-			zap.String("error", result.Error),
-			utils.WithDuration(duration))
+			append(utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic),
+				zap.String("error", result.Error),
+				utils.WithDuration(duration))...)
 	}
 
 	return result, err
@@ -121,10 +127,10 @@ func (p *Processor) processINTMessage(ctx context.Context, msg *types.Message) (
 	return p.apiClient.DeliverMessage(ctx, msg)
 }
 
-// validatePermissions checks if the message has permission to be processed
-func (p *Processor) validatePermissions(msg *types.Message) error {
+// ValidatePermissions checks if the message has permission to be processed
+func (p *Processor) ValidatePermissions(msg *types.Message) error {
 	// Check if topic is configured
-	topicConfig, exists := p.config.Topics.Topics[msg.Topic]
+	_, exists := p.config.Topics.Topics[msg.Topic]
 	if !exists {
 		return types.NewSMTSErrorWithDetails(
 			types.ErrPermissionDenied,

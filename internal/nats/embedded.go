@@ -88,7 +88,7 @@ func (s *EmbeddedServer) Start() error {
 	s.logger.Info("Embedded NATS server started",
 		zap.String("host", s.config.Host),
 		zap.Int("port", s.config.Port),
-		zap.String("store_dir", s.server.GetOpts().StoreDir))
+		zap.String("store_dir", getStoreDir(s.config)))
 
 	return nil
 }

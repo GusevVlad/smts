@@ -110,8 +110,8 @@ func (c *Client) handleMessage(ctx context.Context, msg *stomp.Message, processo
 	smtsMsg, err := c.parseMessage(msg)
 	if err != nil {
 		c.logger.Error("Failed to parse ArtemisMQ message",
-			utils.LoggerFields(operation, "int", "", "")...,
-			utils.WithError(err))
+			append(utils.LoggerFields(operation, "int", "", ""),
+				utils.WithError(err))...)
 
 		// Reject the message
 		if rejErr := c.conn.Nack(msg); rejErr != nil {
@@ -124,8 +124,8 @@ func (c *Client) handleMessage(ctx context.Context, msg *stomp.Message, processo
 	result, err := processor.HandleMessage(ctx, smtsMsg)
 	if err != nil {
 		c.logger.Error("Failed to process ArtemisMQ message",
-			utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic)...,
-			utils.WithError(err))
+			append(utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic),
+				utils.WithError(err))...)
 
 		// Check if we should retry
 		if types.IsRetryableError(err) {
@@ -146,24 +146,24 @@ func (c *Client) handleMessage(ctx context.Context, msg *stomp.Message, processo
 	if result.Success {
 		if err := c.conn.Ack(msg); err != nil {
 			c.logger.Error("Failed to ack successful message",
-				utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic)...,
-				utils.WithError(err))
+				append(utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic),
+					utils.WithError(err))...)
 		} else {
 			c.logger.Debug("ArtemisMQ message processed successfully",
-				utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic)...,
-				utils.WithDuration(time.Since(startTime).Milliseconds()))
+				append(utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic),
+					utils.WithDuration(time.Since(startTime).Milliseconds()))...)
 		}
 	} else {
 		// Message processing failed but we want to ack to avoid reprocessing
 		if err := c.conn.Ack(msg); err != nil {
 			c.logger.Error("Failed to ack failed message",
-				utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic)...,
-				utils.WithError(err))
+				append(utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic),
+					utils.WithError(err))...)
 		}
 		c.logger.Warn("ArtemisMQ message processing failed",
-			utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic)...,
-			zap.String("error", result.Error),
-			utils.WithDuration(time.Since(startTime).Milliseconds()))
+			append(utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic),
+				zap.String("error", result.Error),
+				utils.WithDuration(time.Since(startTime).Milliseconds()))...)
 	}
 }
 
@@ -185,10 +185,19 @@ func (c *Client) parseMessage(msg *stomp.Message) (*types.Message, error) {
 	}
 
 	// Extract headers from Artemis message
-	for key, values := range msg.Header {
-		if len(values) > 0 {
-			smtsMsg.Headers[key] = values[0]
-		}
+	// Note: The stomp.Message.Header field structure may vary by library version
+	// For now, we'll handle common headers explicitly
+	if msgId := msg.Header.Get("smts-message-id"); msgId != "" {
+		smtsMsg.Headers["smts-message-id"] = msgId
+	}
+	if timestamp := msg.Header.Get("smts-timestamp"); timestamp != "" {
+		smtsMsg.Headers["smts-timestamp"] = timestamp
+	}
+	if source := msg.Header.Get("smts-source"); source != "" {
+		smtsMsg.Headers["smts-source"] = source
+	}
+	if topic := msg.Header.Get("smts-topic"); topic != "" {
+		smtsMsg.Headers["smts-topic"] = topic
 	}
 
 	// Ensure required fields
@@ -237,8 +246,8 @@ func (c *Client) PublishMessage(msg *types.Message) error {
 		artemisMsg.Header.Set(key, value)
 	}
 
-	// Publish the message
-	if err := c.conn.Send(artemisMsg); err != nil {
+	// Publish the message using the correct Send method signature
+	if err := c.conn.Send(artemisMsg.Destination, "text/plain", artemisMsg.Body); err != nil {
 		return types.WrapSMTSError(err, types.ErrArtemisPublish, "Failed to publish message to ArtemisMQ")
 	}
 
@@ -276,7 +285,7 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 		Body:        []byte("healthcheck"),
 	}
 
-	if err := c.conn.Send(testMsg); err != nil {
+	if err := c.conn.Send(testMsg.Destination, "text/plain", testMsg.Body); err != nil {
 		return types.WrapSMTSError(err, types.ErrHealthCheck, "ArtemisMQ health check failed")
 	}
 
