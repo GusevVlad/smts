@@ -49,7 +49,7 @@ func TestEXT_SMTS_Integration(t *testing.T) {
 	defer apiServer.Close()
 
 	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempConfig(apiServer.URL, 0)
+	tempConfigFile, err := createTempConfig(apiServer.URL)
 	require.NoError(t, err)
 	defer os.Remove(tempConfigFile)
 
@@ -183,7 +183,7 @@ func TestEXT_SMTS_ErrorHandling(t *testing.T) {
 	defer apiServer.Close()
 
 	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempConfig(apiServer.URL, 1)
+	tempConfigFile, err := createTempConfig(apiServer.URL)
 	require.NoError(t, err)
 	defer os.Remove(tempConfigFile)
 
@@ -243,7 +243,7 @@ func TestEXT_SMTS_InvalidMessage(t *testing.T) {
 	defer apiServer.Close()
 
 	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempConfig(apiServer.URL, 2)
+	tempConfigFile, err := createTempConfig(apiServer.URL)
 	require.NoError(t, err)
 	defer os.Remove(tempConfigFile)
 
@@ -305,7 +305,7 @@ func TestEXT_SMTS_Shutdown(t *testing.T) {
 	// Test server lifecycle without starting embedded NATS
 	t.Run("ServerLifecycle", func(t *testing.T) {
 		// Create temporary config file
-		tempConfigFile, err := createTempConfig(apiServer.URL, 3)
+		tempConfigFile, err := createTempConfig(apiServer.URL)
 		require.NoError(t, err)
 		defer os.Remove(tempConfigFile)
 
@@ -327,7 +327,7 @@ func TestEXT_SMTS_Shutdown(t *testing.T) {
 	// Test configuration validation
 	t.Run("ConfigValidation", func(t *testing.T) {
 		// Test that configuration is properly loaded and validated
-		tempConfigFile, err := createTempConfig(apiServer.URL, 4)
+		tempConfigFile, err := createTempConfig(apiServer.URL)
 		require.NoError(t, err)
 		defer os.Remove(tempConfigFile)
 
@@ -345,11 +345,11 @@ func TestEXT_SMTS_Shutdown(t *testing.T) {
 	})
 }
 
-// createTempConfig creates a temporary config file with the specified API URL
-func createTempConfig(apiURL string, portOffset int) (string, error) {
+// creates a temporary config file with the specified API URL
+func createTempConfig(apiURL string) (string, error) {
 	// Use different ports for each test to avoid conflicts
-	natsPort := 14222 + portOffset
-	healthPort := 18081 + portOffset
+	natsPort := 14222
+	healthPort := 18081
 
 	// Create config with topics section for proper message processing
 	configContent := fmt.Sprintf(`deployment:
@@ -362,14 +362,14 @@ nats:
 	 host: "localhost"
 	 port: %d
 	 stream:
-	   name: "SMTS_EXT_TEST_%d"
+	   name: "SMTS_EXT_TEST"
 	   subjects: ["test.monterra.>", "test.pact_update.>"]
 	   retention: "workqueue"
 	   max_age: "1h"
 	   storage: "memory"
 	   replicas: 1
 	 consumer:
-	   durable_name: "SMTS_EXT_TEST_CONSUMER_%d"
+	   durable_name: "SMTS_EXT_TEST_CONSUMER"
 	   ack_policy: "explicit"
 	   deliver_policy: "all"
 
@@ -418,10 +418,10 @@ roles:
 	 ext_writer:
 	   description: "EXT network message writer"
 	   topics: ["test.monterra.event", "test.pact_update.event"]
-`, natsPort, portOffset, portOffset, apiURL, apiURL, portOffset, healthPort)
+`, natsPort, apiURL, apiURL, healthPort)
 
 	// Create temporary file
-	tempFile, err := ioutil.TempFile("", "ext-test-config-*.yaml")
+	tempFile, err := ioutil.TempFile("", "ext-test-config.yaml")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}

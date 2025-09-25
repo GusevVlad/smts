@@ -34,7 +34,7 @@ func TestINT_SMTS_Integration(t *testing.T) {
 	defer apiServer.Close()
 
 	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempIntConfig(apiServer.URL, 0)
+	tempConfigFile, err := createTempIntConfig(apiServer.URL)
 	require.NoError(t, err)
 	defer os.Remove(tempConfigFile)
 
@@ -158,7 +158,7 @@ func TestINT_SMTS_ErrorHandling(t *testing.T) {
 	defer apiServer.Close()
 
 	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempIntConfig(apiServer.URL, 1)
+	tempConfigFile, err := createTempIntConfig(apiServer.URL)
 	require.NoError(t, err)
 	defer os.Remove(tempConfigFile)
 
@@ -211,7 +211,7 @@ func TestINT_SMTS_InvalidMessage(t *testing.T) {
 	defer apiServer.Close()
 
 	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempIntConfig(apiServer.URL, 2)
+	tempConfigFile, err := createTempIntConfig(apiServer.URL)
 	require.NoError(t, err)
 	defer os.Remove(tempConfigFile)
 
@@ -266,7 +266,7 @@ func TestINT_SMTS_Shutdown(t *testing.T) {
 	// Test server lifecycle without starting embedded NATS
 	t.Run("ServerLifecycle", func(t *testing.T) {
 		// Create temporary config file
-		tempConfigFile, err := createTempIntConfig(apiServer.URL, 3)
+		tempConfigFile, err := createTempIntConfig(apiServer.URL)
 		require.NoError(t, err)
 		defer os.Remove(tempConfigFile)
 
@@ -288,7 +288,7 @@ func TestINT_SMTS_Shutdown(t *testing.T) {
 	// Test configuration validation
 	t.Run("ConfigValidation", func(t *testing.T) {
 		// Test that configuration is properly loaded and validated
-		tempConfigFile, err := createTempIntConfig(apiServer.URL, 4)
+		tempConfigFile, err := createTempIntConfig(apiServer.URL)
 		require.NoError(t, err)
 		defer os.Remove(tempConfigFile)
 
@@ -308,7 +308,7 @@ func TestINT_SMTS_Shutdown(t *testing.T) {
 	})
 }
 
-// createTempIntConfig creates a temporary config file for INT SMTS with the specified API URL
+// creates a temporary config file for INT SMTS with the specified API URL
 func createTempIntConfig(apiURL string) (string, error) {
 	// Use different ports for each test to avoid conflicts
 	natsPort := 14223

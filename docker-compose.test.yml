@@ -56,7 +56,6 @@ services:
     command: >
       -serverPort 1080
 
-  # SMTS test runner
   smts-test-runner:
     build:
       context: .
@@ -75,22 +74,17 @@ services:
       - DLP_ENDPOINT=http://dlp-mock:1080/validate
       - LOG_LEVEL=debug
       - LOG_PATH=/app/logs
-      - LOG_FILE=/app/logs/test-runner.log
     volumes:
       - ./test-results:/app/test-results
       - ./docker-logs/smts-test-runner:/app/logs
-      # - ./docker-logs/smts-test-runner:/var/log/app
-      # - ./docker-logs/smts-test-runner:/var/log
-      # - ./docker-logs/smts-test-runner:/logs
-      # - ./docker-logs/smts-test-runner:/tmp/logs
     command: >
       sh -c "
         echo 'Waiting for services to be ready...' &&
         sleep 1 &&
         echo '=== Running Unit Tests ===' &&
-        /app/bin/run-unit-tests.sh >> /app/logs/unit-tests.log &&
+        /app/bin/run-unit-tests.sh 2>&1 | tee /app/logs/unit-tests.log &&
         echo '=== Running Integration Tests ===' &&
-        /app/bin/run-integration-tests.sh >> /app/logs/integration-tests.log
+        /app/bin/run-integration-tests.sh 2>&1 | tee /app/logs/integration-tests.log
       "
 
   # EXT SMTS test service

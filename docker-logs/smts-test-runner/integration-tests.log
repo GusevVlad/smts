@@ -1,2 +1,77 @@
-FAIL	github.com/corporate/smts/tests/integration [build failed]
+=== RUN   TestEXT_SMTS_Integration
+    ext_smts_test.go:58: 
+        	Error Trace:	/app/tests/integration/ext_smts_test.go:58
+        	Error:      	Received unexpected error:
+        	            	failed to load configuration: SMTS Error [CONFIG_LOAD_ERROR]: Failed to load configuration - While parsing config: yaml: line 2: found character that cannot start any token (details: )
+        	Test:       	TestEXT_SMTS_Integration
+--- FAIL: TestEXT_SMTS_Integration (0.01s)
+=== RUN   TestEXT_SMTS_ErrorHandling
+    ext_smts_test.go:191: 
+        	Error Trace:	/app/tests/integration/ext_smts_test.go:191
+        	Error:      	Received unexpected error:
+        	            	failed to load configuration: SMTS Error [CONFIG_LOAD_ERROR]: Failed to load configuration - While parsing config: yaml: line 2: found character that cannot start any token (details: )
+        	Test:       	TestEXT_SMTS_ErrorHandling
+--- FAIL: TestEXT_SMTS_ErrorHandling (0.00s)
+=== RUN   TestEXT_SMTS_InvalidMessage
+    ext_smts_test.go:251: 
+        	Error Trace:	/app/tests/integration/ext_smts_test.go:251
+        	Error:      	Received unexpected error:
+        	            	failed to load configuration: SMTS Error [CONFIG_LOAD_ERROR]: Failed to load configuration - While parsing config: yaml: line 2: found character that cannot start any token (details: )
+        	Test:       	TestEXT_SMTS_InvalidMessage
+--- FAIL: TestEXT_SMTS_InvalidMessage (0.00s)
+=== RUN   TestEXT_SMTS_Shutdown
+=== RUN   TestEXT_SMTS_Shutdown/ServerLifecycle
+    ext_smts_test.go:313: 
+        	Error Trace:	/app/tests/integration/ext_smts_test.go:313
+        	Error:      	Received unexpected error:
+        	            	failed to load configuration: SMTS Error [CONFIG_LOAD_ERROR]: Failed to load configuration - While parsing config: yaml: line 2: found character that cannot start any token (details: )
+        	Test:       	TestEXT_SMTS_Shutdown/ServerLifecycle
+=== RUN   TestEXT_SMTS_Shutdown/ConfigValidation
+    ext_smts_test.go:335: 
+        	Error Trace:	/app/tests/integration/ext_smts_test.go:335
+        	Error:      	Received unexpected error:
+        	            	failed to load configuration: SMTS Error [CONFIG_LOAD_ERROR]: Failed to load configuration - While parsing config: yaml: line 2: found character that cannot start any token (details: )
+        	Test:       	TestEXT_SMTS_Shutdown/ConfigValidation
+--- FAIL: TestEXT_SMTS_Shutdown (0.00s)
+    --- FAIL: TestEXT_SMTS_Shutdown/ServerLifecycle (0.00s)
+    --- FAIL: TestEXT_SMTS_Shutdown/ConfigValidation (0.00s)
+=== RUN   TestINT_SMTS_Integration
+    int_smts_test.go:43: 
+        	Error Trace:	/app/tests/integration/int_smts_test.go:43
+        	Error:      	Received unexpected error:
+        	            	failed to load configuration: SMTS Error [CONFIG_LOAD_ERROR]: Failed to load configuration - While parsing config: yaml: line 2: found character that cannot start any token (details: )
+        	Test:       	TestINT_SMTS_Integration
+--- FAIL: TestINT_SMTS_Integration (0.00s)
+=== RUN   TestINT_SMTS_ErrorHandling
+    int_smts_test.go:166: 
+        	Error Trace:	/app/tests/integration/int_smts_test.go:166
+        	Error:      	Received unexpected error:
+        	            	failed to load configuration: SMTS Error [CONFIG_LOAD_ERROR]: Failed to load configuration - While parsing config: yaml: line 2: found character that cannot start any token (details: )
+        	Test:       	TestINT_SMTS_ErrorHandling
+--- FAIL: TestINT_SMTS_ErrorHandling (0.00s)
+=== RUN   TestINT_SMTS_InvalidMessage
+    int_smts_test.go:219: 
+        	Error Trace:	/app/tests/integration/int_smts_test.go:219
+        	Error:      	Received unexpected error:
+        	            	failed to load configuration: SMTS Error [CONFIG_LOAD_ERROR]: Failed to load configuration - While parsing config: yaml: line 2: found character that cannot start any token (details: )
+        	Test:       	TestINT_SMTS_InvalidMessage
+--- FAIL: TestINT_SMTS_InvalidMessage (0.00s)
+=== RUN   TestINT_SMTS_Shutdown
+=== RUN   TestINT_SMTS_Shutdown/ServerLifecycle
+    int_smts_test.go:274: 
+        	Error Trace:	/app/tests/integration/int_smts_test.go:274
+        	Error:      	Received unexpected error:
+        	            	failed to load configuration: SMTS Error [CONFIG_LOAD_ERROR]: Failed to load configuration - While parsing config: yaml: line 2: found character that cannot start any token (details: )
+        	Test:       	TestINT_SMTS_Shutdown/ServerLifecycle
+=== RUN   TestINT_SMTS_Shutdown/ConfigValidation
+    int_smts_test.go:296: 
+        	Error Trace:	/app/tests/integration/int_smts_test.go:296
+        	Error:      	Received unexpected error:
+        	            	failed to load configuration: SMTS Error [CONFIG_LOAD_ERROR]: Failed to load configuration - While parsing config: yaml: line 2: found character that cannot start any token (details: )
+        	Test:       	TestINT_SMTS_Shutdown/ConfigValidation
+--- FAIL: TestINT_SMTS_Shutdown (0.00s)
+    --- FAIL: TestINT_SMTS_Shutdown/ServerLifecycle (0.00s)
+    --- FAIL: TestINT_SMTS_Shutdown/ConfigValidation (0.00s)
+FAIL
+FAIL	github.com/corporate/smts/tests/integration	0.015s
 FAIL
