@@ -123,8 +123,8 @@ dlp:
 # ArtemisMQ Configuration (INT only)
 artemis:
   enabled: false  # true for INT deployment
-  host: "artemis.corporate.com"
-  port: 61616
+  host: "artemis"
+  port: 61613
   queue: "SMTS_INT_QUEUE"
   username: "${ARTEMIS_USER}"
   password: "${ARTEMIS_PASSWORD}"

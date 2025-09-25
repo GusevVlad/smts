@@ -155,8 +155,8 @@ func DefaultConfig() *Config {
 		},
 		Artemis: ArtemisConfig{
 			Enabled: false,
-			Host:    "localhost",
-			Port:    61616,
+			Host:    "artemis",
+			Port:    61613,
 			Queue:   "SMTS_QUEUE",
 		},
 		Logging: LoggingConfig{

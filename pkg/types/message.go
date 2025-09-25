@@ -54,17 +54,17 @@ type DLPValidationResponse struct {
 
 // TopicPermission represents access control for topics
 type TopicPermission struct {
-	Topic       string   `json:"topic"`
-	ReadRoles   []string `json:"read_roles"`
-	WriteRoles  []string `json:"write_roles"`
-	Description string   `json:"description"`
+	Topic       string   `mapstructure:"topic" json:"topic"`
+	ReadRoles   []string `mapstructure:"read_roles" json:"read_roles"`
+	WriteRoles  []string `mapstructure:"write_roles" json:"write_roles"`
+	Description string   `mapstructure:"description" json:"description"`
 }
 
 // RoleDefinition represents a role with associated topic permissions
 type RoleDefinition struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Topics      []string `json:"topics"`
+	Name        string   `mapstructure:"name" json:"name"`
+	Description string   `mapstructure:"description" json:"description"`
+	Topics      []string `mapstructure:"topics" json:"topics"`
 }
 
 // generateID generates a unique message ID

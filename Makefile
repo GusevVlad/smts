@@ -76,12 +76,6 @@ test-integration: ## Run integration tests
 	@mkdir -p test-results
 	$(GO) test $(GO_TEST_FLAGS) -timeout=$(TEST_TIMEOUT) -coverprofile=test-results/integration-coverage.out $(INTEGRATION_TEST_PATTERN)
 
-.PHONY: test-e2e
-test-e2e: ## Run end-to-end tests
-	@echo "Running end-to-end tests..."
-	@mkdir -p test-results
-	$(GO) test $(GO_TEST_FLAGS) -timeout=$(TEST_TIMEOUT) -coverprofile=test-results/e2e-coverage.out $(E2E_TEST_PATTERN)
-
 .PHONY: test-coverage
 test-coverage: ## Generate test coverage report
 	@echo "Generating coverage report..."
@@ -164,10 +158,71 @@ docker-build: ## Build Docker images
 	docker build -t smts-int:latest -f Dockerfile --build-arg BINARY=int-smts .
 
 .PHONY: docker-test
-docker-test: ## Run tests in Docker
-	@echo "Running tests in Docker..."
-	docker build -t smts-test:latest -f Dockerfile.test .
-	docker run --rm smts-test:latest
+docker-test: docker-test-unit docker-test-integration ## Run all tests in Docker
+
+.PHONY: docker-test-unit
+docker-test-unit: ## Run unit tests in Docker
+	@echo "Running unit tests in Docker..."
+	docker build -t smts-test-unit:latest -f Dockerfile.test --target test-builder .
+	docker run --rm smts-test-unit:latest /app/bin/run-unit-tests.sh
+
+.PHONY: docker-test-integration
+docker-test-integration: ## Run integration tests in Docker
+	@echo "Running integration tests in Docker..."
+	docker build -t smts-test-integration:latest -f Dockerfile.test --target test-builder .
+	docker run --rm smts-test-integration:latest /app/bin/run-integration-tests.sh
+
+.PHONY: docker-test-ext
+docker-test-ext: ## Run EXT SMTS integration tests in Docker
+	@echo "Running EXT SMTS integration tests in Docker..."
+	docker build -t smts-test-ext:latest -f Dockerfile.test --target test-builder .
+	docker run --rm smts-test-ext:latest /app/bin/run-ext-tests.sh
+
+.PHONY: docker-test-int
+docker-test-int: ## Run INT SMTS integration tests in Docker
+	@echo "Running INT SMTS integration tests in Docker..."
+	docker build -t smts-test-int:latest -f Dockerfile.test --target test-builder .
+	docker run --rm smts-test-int:latest /app/bin/run-int-tests.sh
+
+.PHONY: docker-test-full
+docker-test-full: ## Run complete test suite in Docker
+	@echo "Running complete test suite in Docker..."
+	docker build -t smts-test-full:latest -f Dockerfile.test .
+	docker run --rm smts-test-full:latest
+
+# Docker Compose test targets
+.PHONY: docker-compose-test
+docker-compose-test: docker-compose-test-up docker-compose-test-down ## Run tests with docker-compose
+
+.PHONY: docker-compose-test-up
+docker-compose-test-up: ## Start test services and run tests
+	@echo "Starting test services with docker-compose..."
+	docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from smts-test-runner
+
+.PHONY: docker-compose-test-down
+docker-compose-test-down: ## Stop and remove test services
+	@echo "Stopping test services..."
+	docker-compose -f docker-compose.test.yml down -v
+
+.PHONY: docker-compose-test-ext
+docker-compose-test-ext: ## Run EXT SMTS tests with docker-compose
+	@echo "Running EXT SMTS tests with docker-compose..."
+	docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit smts-ext-test
+
+.PHONY: docker-compose-test-int
+docker-compose-test-int: ## Run INT SMTS tests with docker-compose
+	@echo "Running INT SMTS tests with docker-compose..."
+	docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit smts-int-test
+
+.PHONY: docker-compose-test-services
+docker-compose-test-services: ## Start test services only (for manual testing)
+	@echo "Starting test services..."
+	docker-compose -f docker-compose.test.yml up -d --build nats-test artemis-test api-mock dlp-mock
+
+.PHONY: docker-compose-test-clean
+docker-compose-test-clean: ## Clean up test services and volumes
+	@echo "Cleaning up test services..."
+	docker-compose -f docker-compose.test.yml down -v --rmi local
 
 # CI/CD targets
 .PHONY: ci-setup

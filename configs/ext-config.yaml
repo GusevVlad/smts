@@ -38,14 +38,6 @@ dlp:
     max_attempts: 2
     backoff: "1s"
 
-artemis:
-  enabled: false
-  host: "artemis.corporate.com"
-  port: 61616
-  queue: "SMTS_INT_QUEUE"
-  username: "${ARTEMIS_USER}"
-  password: "${ARTEMIS_PASSWORD}"
-
 logging:
   level: "info"
   format: "json"

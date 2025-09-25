@@ -114,7 +114,7 @@ const (
 func IsRetryableError(err error) bool {
 	if smtsErr, ok := err.(*SMTSError); ok {
 		switch smtsErr.Code {
-		case ErrAPIConnection, ErrAPIRequest, ErrDLPConnection, ErrDLPRequest,
+		case ErrAPIConnection, ErrAPIRequest, ErrAPIResponse, ErrDLPConnection, ErrDLPRequest,
 			ErrArtemisConnection, ErrNATSConnection, ErrResourceExhausted:
 			return true
 		default:

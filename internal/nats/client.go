@@ -75,13 +75,37 @@ func NewClient(config *types.NATSConfig, logger *zap.Logger) (*Client, error) {
 func (c *Client) connect() error {
 	url := fmt.Sprintf("nats://%s:%d", c.config.Host, c.config.Port)
 	
-	conn, err := nats.Connect(url,
-		nats.MaxReconnects(-1), // Infinite reconnects
-		nats.ReconnectWait(2*time.Second),
-		nats.Timeout(10*time.Second),
-		nats.PingInterval(30*time.Second),
-		nats.MaxPingsOutstanding(3),
-	)
+	// For embedded servers, add retry logic to handle startup time
+	var conn *nats.Conn
+	var err error
+	
+	maxAttempts := 5
+	attempt := 0
+	
+	for attempt < maxAttempts {
+		conn, err = nats.Connect(url,
+			nats.MaxReconnects(-1), // Infinite reconnects
+			nats.ReconnectWait(2*time.Second),
+			nats.Timeout(10*time.Second),
+			nats.PingInterval(30*time.Second),
+			nats.MaxPingsOutstanding(3),
+		)
+		
+		if err == nil {
+			break
+		}
+		
+		attempt++
+		if attempt < maxAttempts {
+			c.logger.Warn("Failed to connect to NATS server, retrying",
+				zap.String("url", url),
+				zap.Int("attempt", attempt),
+				zap.Int("max_attempts", maxAttempts),
+				zap.Error(err))
+			time.Sleep(2 * time.Second)
+		}
+	}
+	
 	if err != nil {
 		return types.WrapSMTSError(err, types.ErrNATSConnection, types.MsgNATSConnectionFailed)
 	}
@@ -139,20 +163,24 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 		return types.NewSMTSError(types.ErrHealthCheck, "NATS connection is not connected")
 	}
 
-	// Try to publish a small health check message
-	subject := "smts.health.check"
+	// Create a unique subject for this health check to avoid conflicts
+	subject := fmt.Sprintf("smts.health.check.%d", time.Now().UnixNano())
 	message := []byte("health_check")
 
-	if err := c.conn.Publish(subject, message); err != nil {
-		return types.WrapSMTSError(err, types.ErrHealthCheck, "NATS health check publish failed")
-	}
-
-	// Verify we can receive the message
+	// Create subscription first to ensure we don't miss the message
 	sub, err := c.conn.SubscribeSync(subject)
 	if err != nil {
 		return types.WrapSMTSError(err, types.ErrHealthCheck, "NATS health check subscribe failed")
 	}
 	defer sub.Unsubscribe()
+
+	// Give the subscription a moment to be established
+	time.Sleep(100 * time.Millisecond)
+
+	// Publish the health check message
+	if err := c.conn.Publish(subject, message); err != nil {
+		return types.WrapSMTSError(err, types.ErrHealthCheck, "NATS health check publish failed")
+	}
 
 	// Wait for the message with timeout
 	if _, err := sub.NextMsgWithContext(ctx); err != nil {

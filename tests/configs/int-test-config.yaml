@@ -40,11 +40,11 @@ dlp:
 
 artemis:
   enabled: true
-  host: "localhost"
-  port: 16162  # Different port from EXT test
+  host: "artemis-test"
+  port: 61613  # Different port from EXT test
   queue: "SMTS_INT_TEST_QUEUE"
-  username: "test"
-  password: "test"
+  username: "artemis"
+  password: "artemis"
 
 logging:
   level: "debug"
@@ -58,26 +58,21 @@ health:
 
 # Test topics configuration
 topics:
-  topics:
-    test.monterra.event:
-      topic: "test.monterra.event"
-      read_roles: ["int_reader"]
-      write_roles: ["int_writer"]
-      description: "Test monterra events"
-    
-    test.pact_update.event:
-      topic: "test.pact_update.event"
-      read_roles: ["int_reader"]
-      write_roles: ["int_writer"]
-      description: "Test pact update events"
+  test.monterra.event:
+    read_roles: ["int_reader"]
+    write_roles: ["int_writer"]
+    description: "Test monterra events"
   
-  roles:
-    int_reader:
-      name: "int_reader"
-      description: "INT network message reader"
-      topics: ["test.monterra.event", "test.pact_update.event"]
-    
-    int_writer:
-      name: "int_writer"
-      description: "INT network message writer"
-      topics: ["test.monterra.event", "test.pact_update.event"]
+  test.pact_update.event:
+    read_roles: ["int_reader"]
+    write_roles: ["int_writer"]
+    description: "Test pact update events"
+
+roles:
+  int_reader:
+    description: "INT network message reader"
+    topics: ["test.monterra.event", "test.pact_update.event"]
+  
+  int_writer:
+    description: "INT network message writer"
+    topics: ["test.monterra.event", "test.pact_update.event"]

@@ -46,12 +46,16 @@ func NewServer(configPath string) (*Server, error) {
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Load topics configuration
-	topicsConfig, err := configLoader.LoadTopicsConfig("")
-	if err != nil {
-		return nil, fmt.Errorf("failed to load topics configuration: %w", err)
+	// Load topics configuration only if not already defined in main config
+	if len(cfg.Topics.Topics) == 0 && len(cfg.Topics.Roles) == 0 {
+		topicsConfig, err := configLoader.LoadTopicsConfig("")
+		if err != nil {
+			return nil, fmt.Errorf("failed to load topics configuration: %w", err)
+		}
+		cfg.Topics = *topicsConfig
+	} else {
+		logger.Info("Using topics configuration from main config file")
 	}
-	cfg.Topics = *topicsConfig
 
 	// Create NATS client
 	natsClient, err := nats.NewClient(&cfg.NATS, logger)

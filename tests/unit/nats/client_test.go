@@ -2,6 +2,8 @@ package nats_test
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"testing"
 	"time"
 
@@ -11,6 +13,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
+
+// isNATSServerAvailable checks if an external NATS server is running on the specified port
+func isNATSServerAvailable(host string, port int) bool {
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, fmt.Sprintf("%d", port)), 2*time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
 
 func TestNewClient(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
@@ -26,7 +38,7 @@ func TestNewClient(t *testing.T) {
 			config: &types.NATSConfig{
 				Embedded: true,
 				Host:     "localhost",
-				Port:     4222,
+				Port:     14224, // Use unique port for unit tests
 			},
 			wantErr:      false,
 			wantEmbedded: true,
@@ -36,7 +48,7 @@ func TestNewClient(t *testing.T) {
 			config: &types.NATSConfig{
 				Embedded: false,
 				Host:     "localhost",
-				Port:     4222,
+				Port:     14225, // Use unique port for unit tests
 			},
 			wantErr:      false,
 			wantEmbedded: false,
@@ -54,6 +66,11 @@ func TestNewClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Skip external server test if no NATS server is available
+			if tt.name == "success with external server" && !isNATSServerAvailable(tt.config.Host, tt.config.Port) {
+				t.Skip("Skipping external server test: no NATS server available on localhost:14225")
+			}
+			
 			client, err := nats.NewClient(tt.config, logger)
 			
 			if tt.wantErr {
@@ -78,14 +95,14 @@ func TestClient_HealthCheck(t *testing.T) {
 	config := &types.NATSConfig{
 		Embedded: true,
 		Host:     "localhost",
-		Port:     4222,
+		Port:     14226, // Use unique port for unit tests
 	}
 	
 	client, err := nats.NewClient(config, logger)
 	require.NoError(t, err)
 	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	err = client.HealthCheck(ctx)
@@ -98,7 +115,7 @@ func TestClient_CreateStream(t *testing.T) {
 	config := &types.NATSConfig{
 		Embedded: true,
 		Host:     "localhost",
-		Port:     4222,
+		Port:     14227, // Use unique port for unit tests
 	}
 	
 	client, err := nats.NewClient(config, logger)
@@ -130,7 +147,7 @@ func TestClient_DeleteStream(t *testing.T) {
 	config := &types.NATSConfig{
 		Embedded: true,
 		Host:     "localhost",
-		Port:     4222,
+		Port:     14228, // Use unique port for unit tests
 	}
 	
 	client, err := nats.NewClient(config, logger)

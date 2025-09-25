@@ -18,57 +18,42 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestEXT_SMTS_Integration tests the complete EXT SMTS deployment flow
-func TestEXT_SMTS_Integration(t *testing.T) {
+// TestINT_SMTS_Integration tests the complete INT SMTS deployment flow
+func TestINT_SMTS_Integration(t *testing.T) {
 	// Create test HTTP server to simulate corporate API
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Log the request for debugging
-		t.Logf("API Server received request: %s %s", r.Method, r.URL.Path)
-		t.Logf("Headers: %v", r.Header)
-		
-		// Handle different endpoints
-		if r.URL.Path == "/test.monterra.event" {
-			// Verify the request headers for message delivery
-			assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
-			assert.Equal(t, "test-api-key", r.Header.Get("X-API-Key"))
-			assert.Equal(t, "test-message-123", r.Header.Get("X-SMTS-Message-ID"))
+		// Verify the request
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		assert.Equal(t, "test-api-key", r.Header.Get("X-API-Key"))
+		assert.Equal(t, "test-message-123", r.Header.Get("X-SMTS-Message-ID"))
 
-			// Return success
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-		} else if r.URL.Path == "/health" {
-			// Health check endpoint
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-		} else {
-			// Unknown endpoint
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte("Not Found"))
-		}
+		// Return success
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
 	}))
 	defer apiServer.Close()
 
 	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempConfig(apiServer.URL, 0)
+	tempConfigFile, err := createTempIntConfig(apiServer.URL, 0)
 	require.NoError(t, err)
 	defer os.Remove(tempConfigFile)
 
-	// Create and start the EXT SMTS server
-	extServer, err := server.NewServer(tempConfigFile)
+	// Create and start the INT SMTS server
+	intServer, err := server.NewServer(tempConfigFile)
 	require.NoError(t, err)
 
 	// Start the server
-	err = extServer.Start()
+	err = intServer.Start()
 	require.NoError(t, err)
-	defer extServer.Stop()
+	defer intServer.Stop()
 
 	// Wait a moment for server to initialize
 	time.Sleep(2 * time.Second)
 
 	// Test 1: Publish a message to NATS and verify it gets delivered to API
-	t.Run("MessageFlow_EXT", func(t *testing.T) {
-		// Connect to the embedded NATS server (port 14222 for test 0)
-		nc, err := nats.Connect("nats://localhost:14222")
+	t.Run("MessageFlow_INT", func(t *testing.T) {
+		// Connect to the embedded NATS server (port 14223 for test 0)
+		nc, err := nats.Connect("nats://localhost:14223")
 		require.NoError(t, err)
 		defer nc.Close()
 
@@ -103,7 +88,7 @@ func TestEXT_SMTS_Integration(t *testing.T) {
 		time.Sleep(3 * time.Second)
 
 		// Verify the message was processed by checking the stream
-		streamInfo, err := js.StreamInfo("SMTS_EXT_TEST_0")
+		streamInfo, err := js.StreamInfo("SMTS_INT_TEST_0")
 		require.NoError(t, err)
 		assert.Greater(t, streamInfo.State.Msgs, uint64(0), "Should have messages in stream")
 	})
@@ -113,14 +98,14 @@ func TestEXT_SMTS_Integration(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		err := extServer.HealthCheck(ctx)
+		err := intServer.HealthCheck(ctx)
 		assert.NoError(t, err, "Health check should pass")
 	})
 
 	// Test 3: Multiple messages
 	t.Run("MultipleMessages", func(t *testing.T) {
-		// Connect to the embedded NATS server (port 14222 for test 0)
-		nc, err := nats.Connect("nats://localhost:14222")
+		// Connect to the embedded NATS server (port 14223 for test 0)
+		nc, err := nats.Connect("nats://localhost:14223")
 		require.NoError(t, err)
 		defer nc.Close()
 
@@ -148,57 +133,47 @@ func TestEXT_SMTS_Integration(t *testing.T) {
 		time.Sleep(5 * time.Second)
 
 		// Verify messages were processed
-		streamInfo, err := js.StreamInfo("SMTS_EXT_TEST_0")
+		streamInfo, err := js.StreamInfo("SMTS_INT_TEST_0")
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, streamInfo.State.Msgs, uint64(5), "Should have processed multiple messages")
 	})
 }
 
-// TestEXT_SMTS_ErrorHandling tests error scenarios
-func TestEXT_SMTS_ErrorHandling(t *testing.T) {
+// TestINT_SMTS_ErrorHandling tests error scenarios
+func TestINT_SMTS_ErrorHandling(t *testing.T) {
 	// Create test HTTP server that returns errors
 	errorCount := 0
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		errorCount++
-		t.Logf("Error handling server received request %d: %s %s", errorCount, r.Method, r.URL.Path)
-		
-		if r.URL.Path == "/test.monterra.event" {
-			if errorCount <= 2 {
-				// Return server error for first 2 attempts (should trigger retry)
-				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte("Internal Server Error"))
-			} else {
-				// Then succeed
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("OK"))
-			}
-		} else if r.URL.Path == "/health" {
+		if errorCount <= 2 {
+			// Return server error for first 2 attempts (should trigger retry)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal Server Error"))
+		} else {
+			// Then succeed
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("OK"))
-		} else {
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte("Not Found"))
 		}
 	}))
 	defer apiServer.Close()
 
 	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempConfig(apiServer.URL, 1)
+	tempConfigFile, err := createTempIntConfig(apiServer.URL, 1)
 	require.NoError(t, err)
 	defer os.Remove(tempConfigFile)
 
-	extServer, err := server.NewServer(tempConfigFile)
+	intServer, err := server.NewServer(tempConfigFile)
 	require.NoError(t, err)
 
-	err = extServer.Start()
+	err = intServer.Start()
 	require.NoError(t, err)
-	defer extServer.Stop()
+	defer intServer.Stop()
 
 	time.Sleep(2 * time.Second)
 
 	// Publish a message that will trigger retries
-	// Connect to the embedded NATS server (port 14222 for test 1)
-	nc, err := nats.Connect("nats://localhost:14222")
+	// Connect to the embedded NATS server (port 14224 for test 1)
+	nc, err := nats.Connect("nats://localhost:14224")
 	require.NoError(t, err)
 	defer nc.Close()
 
@@ -226,39 +201,32 @@ func TestEXT_SMTS_ErrorHandling(t *testing.T) {
 	assert.GreaterOrEqual(t, errorCount, 3, "Should have retried at least twice")
 }
 
-// TestEXT_SMTS_InvalidMessage tests handling of invalid messages
-func TestEXT_SMTS_InvalidMessage(t *testing.T) {
+// TestINT_SMTS_InvalidMessage tests handling of invalid messages
+func TestINT_SMTS_InvalidMessage(t *testing.T) {
 	// Create test HTTP server
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Logf("Invalid message server received request: %s %s", r.Method, r.URL.Path)
-		
-		if r.URL.Path == "/test.monterra.event" || r.URL.Path == "/health" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-		} else {
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte("Not Found"))
-		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
 	}))
 	defer apiServer.Close()
 
 	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempConfig(apiServer.URL, 2)
+	tempConfigFile, err := createTempIntConfig(apiServer.URL, 2)
 	require.NoError(t, err)
 	defer os.Remove(tempConfigFile)
 
-	extServer, err := server.NewServer(tempConfigFile)
+	intServer, err := server.NewServer(tempConfigFile)
 	require.NoError(t, err)
 
-	err = extServer.Start()
+	err = intServer.Start()
 	require.NoError(t, err)
-	defer extServer.Stop()
+	defer intServer.Stop()
 
 	time.Sleep(2 * time.Second)
 
 	// Publish invalid message (not SMTS format)
-	// Connect to the embedded NATS server (port 14224 for test 2)
-	nc, err := nats.Connect("nats://localhost:14224")
+	// Connect to the embedded NATS server (port 14225 for test 2)
+	nc, err := nats.Connect("nats://localhost:14225")
 	require.NoError(t, err)
 	defer nc.Close()
 
@@ -275,7 +243,7 @@ func TestEXT_SMTS_InvalidMessage(t *testing.T) {
 
 	// The invalid message should be handled gracefully (logged and acked)
 	// Check consumer info to see if message was processed
-	consumerInfo, err := js.ConsumerInfo("SMTS_EXT_TEST_2", "SMTS_EXT_TEST_CONSUMER_2")
+	consumerInfo, err := js.ConsumerInfo("SMTS_INT_TEST_2", "SMTS_INT_TEST_CONSUMER_2")
 	if err == nil {
 		// If we can get consumer info, check if messages were processed
 		// Note: NumAckPending might be 0 if message was already acked
@@ -286,39 +254,32 @@ func TestEXT_SMTS_InvalidMessage(t *testing.T) {
 	}
 }
 
-// TestEXT_SMTS_Shutdown tests graceful shutdown without embedded NATS
-func TestEXT_SMTS_Shutdown(t *testing.T) {
+// TestINT_SMTS_Shutdown tests graceful shutdown without embedded NATS
+func TestINT_SMTS_Shutdown(t *testing.T) {
 	// Create test HTTP server
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Logf("Shutdown test server received request: %s %s", r.Method, r.URL.Path)
-		
-		if r.URL.Path == "/health" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-		} else {
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte("Not Found"))
-		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
 	}))
 	defer apiServer.Close()
 
 	// Test server lifecycle without starting embedded NATS
 	t.Run("ServerLifecycle", func(t *testing.T) {
 		// Create temporary config file
-		tempConfigFile, err := createTempConfig(apiServer.URL, 3)
+		tempConfigFile, err := createTempIntConfig(apiServer.URL, 3)
 		require.NoError(t, err)
 		defer os.Remove(tempConfigFile)
 
-		extServer, err := server.NewServer(tempConfigFile)
+		intServer, err := server.NewServer(tempConfigFile)
 		require.NoError(t, err)
 
 		// Test that server can be created and configured
-		config := extServer.GetConfig()
+		config := intServer.GetConfig()
 		assert.NotNil(t, config)
-		assert.Equal(t, "ext", config.Deployment.Type)
+		assert.Equal(t, "int", config.Deployment.Type)
 
 		// Test that server is not running initially
-		assert.False(t, extServer.IsRunning(), "Server should not be running initially")
+		assert.False(t, intServer.IsRunning(), "Server should not be running initially")
 
 		// Note: We're not starting the server to avoid NATS conflicts
 		// In a real integration test environment, you would start external NATS first
@@ -327,34 +288,37 @@ func TestEXT_SMTS_Shutdown(t *testing.T) {
 	// Test configuration validation
 	t.Run("ConfigValidation", func(t *testing.T) {
 		// Test that configuration is properly loaded and validated
-		tempConfigFile, err := createTempConfig(apiServer.URL, 4)
+		tempConfigFile, err := createTempIntConfig(apiServer.URL, 4)
 		require.NoError(t, err)
 		defer os.Remove(tempConfigFile)
 
-		extServer, err := server.NewServer(tempConfigFile)
+		intServer, err := server.NewServer(tempConfigFile)
 		require.NoError(t, err)
 
-		config := extServer.GetConfig()
+		config := intServer.GetConfig()
 		
 		// Verify key configuration values
-		assert.Equal(t, "ext", config.Deployment.Type)
-		assert.Equal(t, "smts-ext-test", config.Deployment.Name)
+		assert.Equal(t, "int", config.Deployment.Type)
+		assert.Equal(t, "smts-int-test", config.Deployment.Name)
 		assert.Equal(t, "test", config.Deployment.Environment)
 		assert.Equal(t, apiServer.URL, config.API.BaseURL)
 		assert.Equal(t, "test-api-key", config.API.Auth.APIKey)
+		assert.True(t, config.DLP.Enabled, "DLP should be enabled for INT")
+		assert.True(t, config.Artemis.Enabled, "Artemis should be enabled for INT")
 	})
 }
 
-// createTempConfig creates a temporary config file with the specified API URL
-func createTempConfig(apiURL string, portOffset int) (string, error) {
+// createTempIntConfig creates a temporary config file for INT SMTS with the specified API URL
+func createTempIntConfig(apiURL string) (string, error) {
 	// Use different ports for each test to avoid conflicts
-	natsPort := 14222 + portOffset
-	healthPort := 18081 + portOffset
+	natsPort := 14223
+	healthPort := 18083
+	artemisPort := 61613
 
 	// Create config with topics section for proper message processing
 	configContent := fmt.Sprintf(`deployment:
-	 type: "ext"
-	 name: "smts-ext-test"
+	 type: "int"
+	 name: "smts-int-test"
 	 environment: "test"
 
 nats:
@@ -362,14 +326,14 @@ nats:
 	 host: "localhost"
 	 port: %d
 	 stream:
-	   name: "SMTS_EXT_TEST_%d"
+	   name: "SMTS_INT_TEST"
 	   subjects: ["test.monterra.>", "test.pact_update.>"]
 	   retention: "workqueue"
 	   max_age: "1h"
 	   storage: "memory"
 	   replicas: 1
 	 consumer:
-	   durable_name: "SMTS_EXT_TEST_CONSUMER_%d"
+	   durable_name: "SMTS_INT_TEST_CONSUMER"
 	   ack_policy: "explicit"
 	   deliver_policy: "all"
 
@@ -384,13 +348,20 @@ api:
 	   api_key: "test-api-key"
 
 dlp:
-	 enabled: false
+	 enabled: true
 	 endpoint: "%s/validate"
 	 timeout: "5s"
 	 retry:
 	   max_attempts: 1
 	   backoff: "1s"
 
+artemis:
+	 enabled: true
+	 host: "artemis-test"
+	 port: %d
+	 queue: "SMTS_INT_TEST_QUEUE"
+	 username: "artemis"
+	 password: "artemis"
 
 logging:
 	 level: "debug"
@@ -404,24 +375,24 @@ health:
 
 topics:
 	 test.monterra.event:
-	   read_roles: ["ext_reader"]
-	   write_roles: ["ext_writer"]
+	   read_roles: ["int_reader"]
+	   write_roles: ["int_writer"]
 	   description: "Test monterra events"
 	 test.pact_update.event:
-	   read_roles: ["ext_reader"]
-	   write_roles: ["ext_writer"]
+	   read_roles: ["int_reader"]
+	   write_roles: ["int_writer"]
 	   description: "Test pact update events"
 roles:
-	 ext_reader:
-	   description: "EXT network message reader"
+	 int_reader:
+	   description: "INT network message reader"
 	   topics: ["test.monterra.event", "test.pact_update.event"]
-	 ext_writer:
-	   description: "EXT network message writer"
+	 int_writer:
+	   description: "INT network message writer"
 	   topics: ["test.monterra.event", "test.pact_update.event"]
-`, natsPort, portOffset, portOffset, apiURL, apiURL, portOffset, healthPort)
+`, natsPort, apiURL, apiURL, artemisPort, healthPort)
 
 	// Create temporary file
-	tempFile, err := ioutil.TempFile("", "ext-test-config-*.yaml")
+	tempFile, err := ioutil.TempFile("", "int-test-config-*.yaml")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}

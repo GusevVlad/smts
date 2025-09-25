@@ -1,0 +1,86 @@
+# Test Dockerfile for SMTS
+FROM golang:1.25-alpine AS test-builder
+
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata build-base curl
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build application binaries for docker-compose services
+RUN go build -o bin/ext-smts ./cmd/ext-smts
+RUN go build -o bin/int-smts ./cmd/int-smts
+
+# Create test runner scripts
+RUN echo '#!/bin/sh' > /app/bin/run-unit-tests.sh && \
+    echo 'go test -v -timeout=10m ./tests/unit/...' >> /app/bin/run-unit-tests.sh && \
+    chmod +x /app/bin/run-unit-tests.sh
+
+RUN echo '#!/bin/sh' > /app/bin/run-integration-tests.sh && \
+    echo 'go test -v -timeout=15m ./tests/integration/...' >> /app/bin/run-integration-tests.sh && \
+    chmod +x /app/bin/run-integration-tests.sh
+
+RUN echo '#!/bin/sh' > /app/bin/run-ext-tests.sh && \
+    echo 'go test -v -timeout=15m ./tests/integration/... -run="TestEXT_SMTS"' >> /app/bin/run-ext-tests.sh && \
+    chmod +x /app/bin/run-ext-tests.sh
+
+RUN echo '#!/bin/sh' > /app/bin/run-int-tests.sh && \
+    echo 'go test -v -timeout=15m ./tests/integration/... -run="TestINT_SMTS"' >> /app/bin/run-int-tests.sh && \
+    chmod +x /app/bin/run-int-tests.sh
+
+# Runtime stage for tests
+FROM golang:1.25-alpine AS test-runner
+
+# Install runtime dependencies for tests
+RUN apk add --no-cache ca-certificates tzdata curl
+
+# Create app user
+RUN addgroup -S app && adduser -S app -G app
+
+# Set working directory
+WORKDIR /app
+
+# Copy the entire source code from builder
+COPY --from=test-builder /app/ /app/
+
+# Download dependencies in the test-runner stage
+RUN go mod download
+
+# Create temp directory for NATS storage with proper permissions
+RUN mkdir -p /tmp/smts-nats && chown -R app:app /tmp/smts-nats
+
+# Fix permissions for test data directories
+RUN mkdir -p /app/tests/integration/data/nats/jetstream && \
+    chown -R app:app /app/tests/integration/data
+
+# Create pre-test cleanup script
+RUN echo '#!/bin/sh' > /app/bin/pre-test-cleanup.sh && \
+    echo 'echo "Cleaning up previous test data..."' >> /app/bin/pre-test-cleanup.sh && \
+    echo 'rm -rf /tmp/smts-nats/*' >> /app/bin/pre-test-cleanup.sh && \
+    echo 'rm -rf ./data/nats/*' >> /app/bin/pre-test-cleanup.sh && \
+    echo 'rm -rf /app/tests/integration/data/nats/jetstream/*' >> /app/bin/pre-test-cleanup.sh && \
+    chmod +x /app/bin/pre-test-cleanup.sh
+
+# Switch to app user
+USER app
+
+# Health check for test services (if needed)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:18081/health || exit 1
+
+# Default command - run all tests
+CMD ["sh", "-c", "echo 'Running SMTS tests...' && \
+     /app/bin/pre-test-cleanup.sh && \
+     echo '=== Unit Tests ===' && \
+     /app/bin/run-unit-tests.sh && \
+     echo '=== Integration Tests ===' && \
+     /app/bin/run-integration-tests.sh"]

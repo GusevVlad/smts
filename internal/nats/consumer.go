@@ -49,13 +49,11 @@ func (c *Consumer) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Subscribe to the consumer
-	sub, err := js.Subscribe("", c.handleMessage,
+	// Subscribe to the consumer - use pull subscription for explicit ack policy
+	sub, err := js.PullSubscribe("", c.config.DurableName,
 		nats.BindStream(c.stream),
-		nats.Durable(c.config.DurableName),
 		nats.AckWait(30*time.Second),
 		nats.MaxAckPending(100),
-		nats.DeliverNew(),
 	)
 	if err != nil {
 		return types.WrapSMTSError(err, types.ErrNATSConsumer, "Failed to subscribe to consumer")
@@ -65,6 +63,9 @@ func (c *Consumer) Start(ctx context.Context) error {
 	c.logger.Info("Consumer started",
 		zap.String("stream", c.stream),
 		zap.String("consumer", c.config.DurableName))
+
+	// Start the pull consumer
+	go c.startPullConsumer(ctx)
 
 	// Wait for context cancellation
 	go c.waitForShutdown(ctx)
@@ -157,7 +158,7 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 	// Parse the message
 	smtsMsg, err := c.parseMessage(msg)
 	if err != nil {
-		c.logger.Error("Failed to parse message", 
+		c.logger.Error("Failed to parse message",
 			zap.Error(err),
 			zap.String("subject", msg.Subject))
 		
@@ -171,7 +172,7 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 	// Process the message
 	result, err := c.handler.HandleMessage(ctx, smtsMsg)
 	if err != nil {
-		c.logger.Error("Failed to process message", 
+		c.logger.Error("Failed to process message",
 			zap.Error(err),
 			zap.String("message_id", smtsMsg.ID),
 			zap.String("topic", smtsMsg.Topic))
@@ -194,7 +195,7 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 	// Acknowledge successful processing
 	if result.Success {
 		if err := msg.Ack(); err != nil {
-			c.logger.Error("Failed to ack successful message", 
+			c.logger.Error("Failed to ack successful message",
 				zap.Error(err),
 				zap.String("message_id", smtsMsg.ID))
 		} else {
@@ -205,7 +206,7 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 	} else {
 		// Message processing failed but we want to ack to avoid reprocessing
 		if err := msg.Ack(); err != nil {
-			c.logger.Error("Failed to ack failed message", 
+			c.logger.Error("Failed to ack failed message",
 				zap.Error(err),
 				zap.String("message_id", smtsMsg.ID))
 		}
@@ -213,6 +214,31 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 			zap.String("message_id", smtsMsg.ID),
 			zap.String("topic", smtsMsg.Topic),
 			zap.String("error", result.Error))
+	}
+}
+
+// startPullConsumer starts a pull consumer that fetches messages manually
+func (c *Consumer) startPullConsumer(ctx context.Context) error {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			// Fetch messages from the pull subscription
+			msgs, err := c.subscription.Fetch(10, nats.MaxWait(5*time.Second))
+			if err != nil && err != nats.ErrTimeout {
+				c.logger.Error("Failed to fetch messages", zap.Error(err))
+				continue
+			}
+
+			// Process each message
+			for _, msg := range msgs {
+				c.handleMessage(msg)
+			}
+		}
 	}
 }
 

@@ -34,7 +34,16 @@ type RetryableFunc func(attempt int) error
 func Retry(ctx context.Context, config RetryConfig, fn RetryableFunc, logger *zap.Logger, operation string) error {
 	var lastErr error
 
+	logger.Debug("Retry function called",
+		zap.String("operation", operation),
+		zap.Int("max_attempts", config.MaxAttempts),
+		zap.Duration("backoff", config.Backoff))
+
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
+		logger.Debug("Retry attempt starting",
+			zap.String("operation", operation),
+			zap.Int("attempt", attempt),
+			zap.Int("max_attempts", config.MaxAttempts))
 		// Check if context is cancelled
 		select {
 		case <-ctx.Done():
@@ -110,7 +119,7 @@ func calculateBackoff(config RetryConfig, attempt int) time.Duration {
 	}
 
 	// Add jitter if enabled
-	if config.Jitter {
+	if config.Jitter && backoff > 0 {
 		jitter := time.Duration(rand.Int63n(int64(backoff / 2)))
 		backoff = backoff/2 + jitter
 	}

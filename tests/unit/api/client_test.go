@@ -335,9 +335,22 @@ func TestAPIClient_MessageValidation(t *testing.T) {
 }
 
 func TestAPIClient_Authentication(t *testing.T) {
+	apiKeyReceived := false
+	
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify API key header
-		assert.Equal(t, "test-api-key", r.Header.Get("X-API-Key"))
+		receivedAPIKey := r.Header.Get("X-API-Key")
+		t.Logf("Received headers: %v", r.Header)
+		t.Logf("X-API-Key header value: '%s'", receivedAPIKey)
+		t.Logf("Request URL: %s", r.URL.String())
+		t.Logf("Request Method: %s", r.Method)
+		
+		if receivedAPIKey == "test-api-key" {
+			apiKeyReceived = true
+			t.Log("API key correctly received!")
+		} else {
+			t.Logf("API key mismatch. Expected: 'test-api-key', Got: '%s'", receivedAPIKey)
+		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	}))
@@ -347,11 +360,18 @@ func TestAPIClient_Authentication(t *testing.T) {
 	config := &types.APIConfig{
 		BaseURL: server.URL,
 		Timeout: 30 * time.Second,
+		Retry: types.RetryConfig{
+			MaxAttempts: 3,
+			Backoff:     1 * time.Second,
+		},
 		Auth: types.AuthConfig{
 			Type:   "api_key",
 			APIKey: "test-api-key",
 		},
 	}
+
+	t.Logf("Test server URL: %s", server.URL)
+	t.Logf("Config BaseURL: %s", config.BaseURL)
 
 	client := api.NewClient(config, logger)
 
@@ -363,8 +383,15 @@ func TestAPIClient_Authentication(t *testing.T) {
 		Body:      []byte(`{"test": "data"}`),
 	}
 
+	t.Logf("Message topic: %s", msg.Topic)
+	t.Logf("Expected endpoint: %s/%s", config.BaseURL, msg.Topic)
+
 	result, err := client.DeliverMessage(context.Background(), msg)
 
+	t.Logf("API call result: success=%v, error=%v", result.Success, err)
+	t.Logf("API key received by server: %v", apiKeyReceived)
+	
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.True(t, apiKeyReceived, "API key should have been received by the server")
 }

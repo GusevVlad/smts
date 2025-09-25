@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/corporate/smts/pkg/types"
 	"github.com/nats-io/nats-server/v2/server"
@@ -25,11 +26,15 @@ func NewEmbeddedServer(config *types.NATSConfig, logger *zap.Logger) (*EmbeddedS
 		Port: config.Port,
 		JetStream: true,
 		StoreDir:  getStoreDir(config),
+		// Additional configuration for Docker compatibility
+		MaxPayload: 1048576,   // 1MB
+		MaxPending: 1048576,   // 1MB (must be >= MaxPayload)
+		WriteDeadline: 2 * time.Second,
 	}
 
-	// Configure JetStream
-	opts.JetStreamMaxMemory = 1024 * 1024 * 1024 // 1GB
-	opts.JetStreamMaxStore = 1024 * 1024 * 1024 * 10 // 10GB
+	// Configure JetStream with memory-only storage for tests
+	opts.JetStreamMaxMemory = 256 * 1024 * 1024 // 256MB for tests
+	opts.JetStreamMaxStore = 512 * 1024 * 1024  // 512MB for tests
 
 	// Create and configure the server
 	s, err := server.NewServer(opts)
@@ -56,13 +61,13 @@ func NewEmbeddedServer(config *types.NATSConfig, logger *zap.Logger) (*EmbeddedS
 
 // getStoreDir returns the directory for JetStream storage
 func getStoreDir(config *types.NATSConfig) string {
-	// Use current directory if no specific store directory is configured
-	storeDir := "./data/nats"
+	// Use temp directory for better Docker compatibility
+	storeDir := filepath.Join(os.TempDir(), "smts-nats")
 	
 	// Create the directory if it doesn't exist
 	if err := os.MkdirAll(storeDir, 0755); err != nil {
-		// Fallback to temp directory
-		storeDir = filepath.Join(os.TempDir(), "smts-nats")
+		// Final fallback to current directory
+		storeDir = "./data/nats"
 		os.MkdirAll(storeDir, 0755)
 	}
 	
@@ -80,10 +85,17 @@ func (s *EmbeddedServer) Start() error {
 	// Start the server
 	go s.server.Start()
 
-	// Wait for server to be ready
-	if !s.server.ReadyForConnections(10) {
-		return types.NewSMTSError(types.ErrSystemStartup, "Embedded NATS server failed to start within timeout")
+	// Wait for server to be ready with longer timeout for tests (60 seconds for JetStream initialization)
+	if !s.server.ReadyForConnections(60 * time.Second) {
+		// Check if server is running but not ready
+		if s.server.Running() {
+			return types.NewSMTSError(types.ErrSystemStartup, "Embedded NATS server is running but not ready for connections within 60 seconds (JetStream may be initializing)")
+		}
+		return types.NewSMTSError(types.ErrSystemStartup, "Embedded NATS server failed to start within 60 second timeout")
 	}
+
+	// Give JetStream more time to fully initialize (5 seconds for Docker environment)
+	time.Sleep(5 * time.Second)
 
 	s.logger.Info("Embedded NATS server started",
 		zap.String("host", s.config.Host),

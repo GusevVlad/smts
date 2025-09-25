@@ -35,10 +35,7 @@ func NewClient(config *types.APIConfig, logger *zap.Logger) *Client {
 		SetRetryCount(0). // We'll handle retries ourselves
 		SetHeader("User-Agent", "SMTS/1.0")
 
-	// Configure authentication
-	if config.Auth.Type == "api_key" && config.Auth.APIKey != "" {
-		client.SetHeader("X-API-Key", config.Auth.APIKey)
-	}
+	// Note: Authentication headers are set per-request to avoid conflicts
 
 	return &Client{
 		client:  client,
@@ -55,9 +52,13 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 
 	// Validate message
 	if err := c.validateMessage(msg); err != nil {
+		messageID := ""
+		if msg != nil {
+			messageID = msg.ID
+		}
 		return &types.DeliveryResult{
 			Success:    false,
-			MessageID:  msg.ID,
+			MessageID:  messageID,
 			Timestamp:  time.Now().UTC(),
 			Error:      err.Error(),
 		}, err
@@ -71,6 +72,11 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 		SetContext(ctx).
 		SetBody(msg.Body).
 		SetHeader("Content-Type", "application/json")
+
+	// Add API key header if configured
+	if c.config.Auth.Type == "api_key" && c.config.Auth.APIKey != "" {
+		request.SetHeader("X-API-Key", c.config.Auth.APIKey)
+	}
 
 	// Add SMTS headers
 	request.SetHeader("X-SMTS-Message-ID", msg.ID)
@@ -92,6 +98,11 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 		Jitter:      true,
 	}
 
+	c.logger.Debug("Starting retry logic",
+		append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+			zap.Int("max_attempts", retryConfig.MaxAttempts),
+			zap.Duration("backoff", retryConfig.Backoff))...)
+
 	err = utils.Retry(ctx, retryConfig, func(attempt int) error {
 		c.logger.Debug("Sending message to corporate API",
 			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
@@ -100,6 +111,11 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 
 		resp, err = request.Post(endpoint)
 		if err != nil {
+			c.logger.Error("HTTP request failed",
+				append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+					zap.Int("attempt", attempt),
+					zap.String("endpoint", endpoint),
+					zap.Error(err))...)
 			return types.WrapSMTSError(err, types.ErrAPIConnection, "Failed to connect to corporate API")
 		}
 
@@ -130,6 +146,22 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 
 	if err != nil {
 		c.logger.Error("Failed to deliver message",
+			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+				utils.WithError(err),
+				utils.WithDuration(duration))...)
+
+		return &types.DeliveryResult{
+			Success:    false,
+			MessageID:  msg.ID,
+			Timestamp:  time.Now().UTC(),
+			Error:      err.Error(),
+		}, err
+	}
+
+	// Check if resp is nil before accessing StatusCode
+	if resp == nil {
+		err := types.NewSMTSError(types.ErrAPIConnection, "No response received from corporate API")
+		c.logger.Error("Failed to deliver message - no response",
 			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
 				utils.WithError(err),
 				utils.WithDuration(duration))...)
@@ -179,6 +211,11 @@ func (c *Client) ValidateMessage(ctx context.Context, msg *types.Message) (*type
 		SetContext(ctx).
 		SetBody(dlpRequest).
 		SetHeader("Content-Type", "application/json")
+
+	// Add API key header if configured
+	if c.config.Auth.Type == "api_key" && c.config.Auth.APIKey != "" {
+		request.SetHeader("X-API-Key", c.config.Auth.APIKey)
+	}
 
 	// Execute the request with retry
 	var resp *resty.Response
@@ -284,9 +321,15 @@ func (c *Client) validateMessage(msg *types.Message) error {
 func (c *Client) HealthCheck(ctx context.Context) error {
 	endpoint := fmt.Sprintf("%s/health", c.baseURL)
 
-	resp, err := c.client.R().
-		SetContext(ctx).
-		Get(endpoint)
+	request := c.client.R().
+		SetContext(ctx)
+
+	// Add API key header if configured
+	if c.config.Auth.Type == "api_key" && c.config.Auth.APIKey != "" {
+		request.SetHeader("X-API-Key", c.config.Auth.APIKey)
+	}
+
+	resp, err := request.Get(endpoint)
 
 	if err != nil {
 		return types.WrapSMTSError(err, types.ErrHealthCheck, "API health check failed")
