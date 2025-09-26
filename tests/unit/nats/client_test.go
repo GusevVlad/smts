@@ -58,7 +58,7 @@ func TestNewClient(t *testing.T) {
 			config: &types.NATSConfig{
 				Embedded: true,
 				Host:     "localhost",
-				Port:     0, // invalid port
+				Port:     -1, // invalid port (negative value)
 			},
 			wantErr: true,
 		},

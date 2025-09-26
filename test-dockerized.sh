@@ -35,7 +35,7 @@ docker run --rm smts-test:latest /app/bin/smts-integration-test -test.v -test.ti
 
 # Test 6: Test docker-compose setup (services only)
 echo "6. Testing docker-compose services startup..."
-docker-compose -f docker-compose.test.yml up -d --build nats-test artemis-test api-mock dlp-mock
+docker-compose -f docker-compose.test.yml up -d --build artemis-test api-mock dlp-mock
 
 # Wait for services to be ready
 echo "Waiting for services to be ready..."

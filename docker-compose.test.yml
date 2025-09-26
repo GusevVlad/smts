@@ -1,21 +1,6 @@
 version: '3.8'
 
 services:
-  # Test NATS server for integration tests
-  nats-test:
-    image: nats:2.12-alpine
-    container_name: nats-test
-    ports:
-      - "14222:4222"  # EXT test port
-      - "14223:4223"  # INT test port
-      - "18222:8222"  # Monitoring
-    command: >
-      -js
-      -sd /data
-      -m 8222
-    volumes:
-      - nats-test-data:/data
-
   # Test Artemis server for INT SMTS tests
   artemis-test:
     container_name: artemis-test
@@ -40,10 +25,9 @@ services:
       - "18082:1081"  # INT test API
     environment:
       - MOCKSERVER_LOG_LEVEL=INFO
-      - MOCKSERVER_SERVER_PORT=1080
-    command: >
-      -serverPort 1080
-      -serverPort 1081
+      - MOCKSERVER_SERVER_PORT=1080,1081
+    # MockServer containers are very minimal and don't have standard health check tools
+    # Using a simple delay instead of health check
 
   # Test DLP service for INT SMTS tests
   dlp-mock:
@@ -55,6 +39,8 @@ services:
       - MOCKSERVER_LOG_LEVEL=INFO
     command: >
       -serverPort 1080
+    # MockServer containers are very minimal and don't have standard health check tools
+    # Using a simple delay instead of health check
 
   smts-test-runner:
     build:
@@ -63,12 +49,17 @@ services:
       target: test-runner
     container_name: smts-test-runner
     depends_on:
-      nats-test:
-        condition: service_started
       artemis-test:
         condition: service_healthy
+      api-mock:
+        condition: service_started
+      dlp-mock:
+        condition: service_started
+      smts-ext-test:
+        condition: service_healthy
+      smts-int-test:
+        condition: service_healthy
     environment:
-      - NATS_URL=nats://nats-test:4222
       - ARTEMIS_URL=tcp://artemis-test:61613
       - API_BASE_URL=http://api-mock:1080
       - DLP_ENDPOINT=http://dlp-mock:1080/validate
@@ -79,8 +70,8 @@ services:
       - ./docker-logs/smts-test-runner:/app/logs
     command: >
       sh -c "
-        echo 'Waiting for services to be ready...' &&
-        sleep 1 &&
+        echo 'Waiting for all services to be ready...' &&
+        sleep 5 &&
         echo '=== Running Unit Tests ===' &&
         /app/bin/run-unit-tests.sh 2>&1 | tee /app/logs/unit-tests.log &&
         echo '=== Running Integration Tests ===' &&
@@ -95,7 +86,7 @@ services:
       target: builder
     container_name: smts-ext-test
     depends_on:
-      nats-test:
+      api-mock:
         condition: service_started
     environment:
       - CONFIG_FILE=/app/tests/configs/ext-test-config.yaml
@@ -104,7 +95,7 @@ services:
         /app/bin/ext-smts --config /app/tests/configs/ext-test-config.yaml
       "
     healthcheck:
-      test: ["CMD", "/app/bin/ext-smts", "--health-check", "--config", "/app/tests/configs/ext-test-config.yaml"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:18081/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -117,10 +108,12 @@ services:
       target: builder
     container_name: smts-int-test
     depends_on:
-      nats-test:
-        condition: service_started
       artemis-test:
         condition: service_healthy
+      api-mock:
+        condition: service_started
+      dlp-mock:
+        condition: service_started
     environment:
       - CONFIG_FILE=/app/tests/configs/int-test-config.yaml
     command: >
@@ -128,11 +121,10 @@ services:
         /app/bin/int-smts --config /app/tests/configs/int-test-config.yaml
       "
     healthcheck:
-      test: ["CMD", "/app/bin/int-smts", "--health-check", "--config", "/app/tests/configs/int-test-config.yaml"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:18083/health"]
       interval: 10s
       timeout: 5s
       retries: 5
 
 volumes:
-  nats-test-data:
   artemis-test-data:

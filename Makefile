@@ -217,7 +217,7 @@ docker-compose-test-int: ## Run INT SMTS tests with docker-compose
 .PHONY: docker-compose-test-services
 docker-compose-test-services: ## Start test services only (for manual testing)
 	@echo "Starting test services..."
-	docker-compose -f docker-compose.test.yml up -d --build nats-test artemis-test api-mock dlp-mock
+	docker-compose -f docker-compose.test.yml up -d --build artemis-test api-mock dlp-mock
 
 .PHONY: docker-compose-test-clean
 docker-compose-test-clean: ## Clean up test services and volumes

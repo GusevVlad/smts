@@ -6,7 +6,7 @@ deployment:
 
 nats:
   embedded: true
-  host: "localhost"
+  host: "0.0.0.0"  # Bind to all interfaces for Docker compatibility
   port: 14223  # Different port to avoid conflicts
   stream:
     name: "SMTS_INT_TEST"

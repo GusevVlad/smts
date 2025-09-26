@@ -66,7 +66,7 @@ func TestEXT_SMTS_Integration(t *testing.T) {
 
 	// Test 1: Publish a message to NATS and verify it gets delivered to API
 	t.Run("MessageFlow_EXT", func(t *testing.T) {
-		// Connect to the embedded NATS server (port 14222 for test 0)
+		// Connect to the embedded NATS server started by the EXT SMTS instance
 		nc, err := nats.Connect("nats://localhost:14222")
 		require.NoError(t, err)
 		defer nc.Close()
@@ -102,7 +102,7 @@ func TestEXT_SMTS_Integration(t *testing.T) {
 		time.Sleep(3 * time.Second)
 
 		// Verify the message was processed by checking the stream
-		streamInfo, err := js.StreamInfo("SMTS_EXT_TEST_0")
+		streamInfo, err := js.StreamInfo("SMTS_EXT_TEST")
 		require.NoError(t, err)
 		assert.Greater(t, streamInfo.State.Msgs, uint64(0), "Should have messages in stream")
 	})
@@ -118,7 +118,7 @@ func TestEXT_SMTS_Integration(t *testing.T) {
 
 	// Test 3: Multiple messages
 	t.Run("MultipleMessages", func(t *testing.T) {
-		// Connect to the embedded NATS server (port 14222 for test 0)
+		// Connect to the embedded NATS server started by the EXT SMTS instance
 		nc, err := nats.Connect("nats://localhost:14222")
 		require.NoError(t, err)
 		defer nc.Close()
@@ -147,7 +147,7 @@ func TestEXT_SMTS_Integration(t *testing.T) {
 		time.Sleep(5 * time.Second)
 
 		// Verify messages were processed
-		streamInfo, err := js.StreamInfo("SMTS_EXT_TEST_0")
+		streamInfo, err := js.StreamInfo("SMTS_EXT_TEST")
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, streamInfo.State.Msgs, uint64(5), "Should have processed multiple messages")
 	})
@@ -194,7 +194,7 @@ func TestEXT_SMTS_ErrorHandling(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Publish a message that will trigger retries
-	// Connect to the embedded NATS server (port 14222 for test 1)
+	// Connect to the embedded NATS server started by the EXT SMTS instance
 	nc, err := nats.Connect("nats://localhost:14222")
 	require.NoError(t, err)
 	defer nc.Close()
@@ -252,8 +252,8 @@ func TestEXT_SMTS_InvalidMessage(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Publish invalid message (not SMTS format)
-	// Connect to the embedded NATS server (port 14224 for test 2)
-	nc, err := nats.Connect("nats://localhost:14224")
+	// Connect to the embedded NATS server started by the EXT SMTS instance
+	nc, err := nats.Connect("nats://localhost:14222")
 	require.NoError(t, err)
 	defer nc.Close()
 
@@ -270,7 +270,7 @@ func TestEXT_SMTS_InvalidMessage(t *testing.T) {
 
 	// The invalid message should be handled gracefully (logged and acked)
 	// Check consumer info to see if message was processed
-	consumerInfo, err := js.ConsumerInfo("SMTS_EXT_TEST_2", "SMTS_EXT_TEST_CONSUMER_2")
+	consumerInfo, err := js.ConsumerInfo("SMTS_EXT_TEST", "SMTS_EXT_TEST_CONSUMER")
 	if err == nil {
 		// If we can get consumer info, check if messages were processed
 		// Note: NumAckPending might be 0 if message was already acked
