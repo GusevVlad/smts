@@ -2,13 +2,11 @@
 
 topics:
   monterra.event:
-    topic: "monterra.event"
     read_roles: ["ext_reader", "int_reader"]
     write_roles: ["ext_writer", "int_writer"]
     description: "Monterra events topic"
   
   pact_update.event:
-    topic: "pact_update.event"
     read_roles: ["ext_reader", "int_reader"]
     write_roles: ["ext_writer", "int_writer"]
     description: "Pact update events topic"

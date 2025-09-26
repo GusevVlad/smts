@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -33,13 +31,12 @@ func TestINT_SMTS_Integration(t *testing.T) {
 	}))
 	defer apiServer.Close()
 
-	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempIntConfig(apiServer.URL)
-	require.NoError(t, err)
-	defer os.Remove(tempConfigFile)
-
+	// Use test config file directly for docker compatibility
+	// In docker, the config file is already set up with correct topics and URLs
+	configFile := getTestConfigFile("int")
+	
 	// Create and start the INT SMTS server
-	intServer, err := server.NewServer(tempConfigFile)
+	intServer, err := server.NewServer(configFile)
 	require.NoError(t, err)
 
 	// Start the server
@@ -157,12 +154,10 @@ func TestINT_SMTS_ErrorHandling(t *testing.T) {
 	}))
 	defer apiServer.Close()
 
-	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempIntConfig(apiServer.URL)
-	require.NoError(t, err)
-	defer os.Remove(tempConfigFile)
-
-	intServer, err := server.NewServer(tempConfigFile)
+	// Use test config file directly for docker compatibility
+	configFile := getTestConfigFile("int")
+	
+	intServer, err := server.NewServer(configFile)
 	require.NoError(t, err)
 
 	err = intServer.Start()
@@ -210,12 +205,10 @@ func TestINT_SMTS_InvalidMessage(t *testing.T) {
 	}))
 	defer apiServer.Close()
 
-	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempIntConfig(apiServer.URL)
-	require.NoError(t, err)
-	defer os.Remove(tempConfigFile)
-
-	intServer, err := server.NewServer(tempConfigFile)
+	// Use test config file directly for docker compatibility
+	configFile := getTestConfigFile("int")
+	
+	intServer, err := server.NewServer(configFile)
 	require.NoError(t, err)
 
 	err = intServer.Start()
@@ -265,12 +258,10 @@ func TestINT_SMTS_Shutdown(t *testing.T) {
 
 	// Test server lifecycle without starting embedded NATS
 	t.Run("ServerLifecycle", func(t *testing.T) {
-		// Create temporary config file
-		tempConfigFile, err := createTempIntConfig(apiServer.URL)
-		require.NoError(t, err)
-		defer os.Remove(tempConfigFile)
-
-		intServer, err := server.NewServer(tempConfigFile)
+		// Use test config file directly for docker compatibility
+		configFile := getTestConfigFile("int")
+		
+		intServer, err := server.NewServer(configFile)
 		require.NoError(t, err)
 
 		// Test that server can be created and configured
@@ -288,11 +279,9 @@ func TestINT_SMTS_Shutdown(t *testing.T) {
 	// Test configuration validation
 	t.Run("ConfigValidation", func(t *testing.T) {
 		// Test that configuration is properly loaded and validated
-		tempConfigFile, err := createTempIntConfig(apiServer.URL)
-		require.NoError(t, err)
-		defer os.Remove(tempConfigFile)
-
-		intServer, err := server.NewServer(tempConfigFile)
+		configFile := getTestConfigFile("int")
+		
+		intServer, err := server.NewServer(configFile)
 		require.NoError(t, err)
 
 		config := intServer.GetConfig()
@@ -308,100 +297,3 @@ func TestINT_SMTS_Shutdown(t *testing.T) {
 	})
 }
 
-// creates a temporary config file for INT SMTS with the specified API URL
-func createTempIntConfig(apiURL string) (string, error) {
-	// Use different ports for each test to avoid conflicts
-	natsPort := 14223
-	healthPort := 18083
-	artemisPort := 61613
-
-	// Create config with topics section for proper message processing
-	configContent := fmt.Sprintf(`deployment:
-	 type: "int"
-	 name: "smts-int-test"
-	 environment: "test"
-
-nats:
-	 embedded: true
-	 host: "localhost"
-	 port: %d
-	 stream:
-	   name: "SMTS_INT_TEST"
-	   subjects: ["test.monterra.>", "test.pact_update.>"]
-	   retention: "workqueue"
-	   max_age: "1h"
-	   storage: "memory"
-	   replicas: 1
-	 consumer:
-	   durable_name: "SMTS_INT_TEST_CONSUMER"
-	   ack_policy: "explicit"
-	   deliver_policy: "all"
-
-api:
-	 base_url: "%s"
-	 timeout: "10s"
-	 retry:
-	   max_attempts: 2
-	   backoff: "1s"
-	 auth:
-	   type: "api_key"
-	   api_key: "test-api-key"
-
-dlp:
-	 enabled: true
-	 endpoint: "%s/validate"
-	 timeout: "5s"
-	 retry:
-	   max_attempts: 1
-	   backoff: "1s"
-
-artemis:
-	 enabled: true
-	 host: "artemis-test"
-	 port: %d
-	 queue: "SMTS_INT_TEST_QUEUE"
-	 username: "artemis"
-	 password: "artemis"
-
-logging:
-	 level: "debug"
-	 format: "console"
-	 output: "stdout"
-
-health:
-	 port: %d
-	 path: "/health"
-	 interval: "10s"
-
-topics:
-	 test.monterra.event:
-	   read_roles: ["int_reader"]
-	   write_roles: ["int_writer"]
-	   description: "Test monterra events"
-	 test.pact_update.event:
-	   read_roles: ["int_reader"]
-	   write_roles: ["int_writer"]
-	   description: "Test pact update events"
-roles:
-	 int_reader:
-	   description: "INT network message reader"
-	   topics: ["test.monterra.event", "test.pact_update.event"]
-	 int_writer:
-	   description: "INT network message writer"
-	   topics: ["test.monterra.event", "test.pact_update.event"]
-`, natsPort, apiURL, apiURL, artemisPort, healthPort)
-
-	// Create temporary file
-	tempFile, err := ioutil.TempFile("", "int-test-config-*.yaml")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer tempFile.Close()
-
-	// Write the config data to temporary file
-	if _, err := tempFile.Write([]byte(configContent)); err != nil {
-		return "", fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	return tempFile.Name(), nil
-}

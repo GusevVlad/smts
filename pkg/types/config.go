@@ -107,6 +107,26 @@ type TopicsConfig struct {
 	Roles  map[string]RoleDefinition  `mapstructure:"roles" yaml:"roles"`
 }
 
+// UnmarshalYAML implements custom YAML unmarshaling for TopicsConfig
+func (tc *TopicsConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Create a temporary struct to hold the raw data
+	type rawTopicsConfig struct {
+		Topics map[string]TopicPermission `yaml:"topics"`
+		Roles  map[string]RoleDefinition  `yaml:"roles"`
+	}
+	
+	var raw rawTopicsConfig
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+	
+	// Copy the data to the actual struct
+	tc.Topics = raw.Topics
+	tc.Roles = raw.Roles
+	
+	return nil
+}
+
 // DefaultConfig returns a configuration with default values
 func DefaultConfig() *Config {
 	return &Config{

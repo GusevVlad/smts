@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,13 +48,12 @@ func TestEXT_SMTS_Integration(t *testing.T) {
 	}))
 	defer apiServer.Close()
 
-	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempConfig(apiServer.URL)
-	require.NoError(t, err)
-	defer os.Remove(tempConfigFile)
-
+	// Use test config file directly for docker compatibility
+	// In docker, the config file is already set up with correct topics and URLs
+	configFile := getTestConfigFile("ext")
+	
 	// Create and start the EXT SMTS server
-	extServer, err := server.NewServer(tempConfigFile)
+	extServer, err := server.NewServer(configFile)
 	require.NoError(t, err)
 
 	// Start the server
@@ -182,12 +181,10 @@ func TestEXT_SMTS_ErrorHandling(t *testing.T) {
 	}))
 	defer apiServer.Close()
 
-	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempConfig(apiServer.URL)
-	require.NoError(t, err)
-	defer os.Remove(tempConfigFile)
-
-	extServer, err := server.NewServer(tempConfigFile)
+	// Use test config file directly for docker compatibility
+	configFile := getTestConfigFile("ext")
+	
+	extServer, err := server.NewServer(configFile)
 	require.NoError(t, err)
 
 	err = extServer.Start()
@@ -242,12 +239,10 @@ func TestEXT_SMTS_InvalidMessage(t *testing.T) {
 	}))
 	defer apiServer.Close()
 
-	// Create temporary config file with dynamic API URL and unique port
-	tempConfigFile, err := createTempConfig(apiServer.URL)
-	require.NoError(t, err)
-	defer os.Remove(tempConfigFile)
-
-	extServer, err := server.NewServer(tempConfigFile)
+	// Use test config file directly for docker compatibility
+	configFile := getTestConfigFile("ext")
+	
+	extServer, err := server.NewServer(configFile)
 	require.NoError(t, err)
 
 	err = extServer.Start()
@@ -304,12 +299,10 @@ func TestEXT_SMTS_Shutdown(t *testing.T) {
 
 	// Test server lifecycle without starting embedded NATS
 	t.Run("ServerLifecycle", func(t *testing.T) {
-		// Create temporary config file
-		tempConfigFile, err := createTempConfig(apiServer.URL)
-		require.NoError(t, err)
-		defer os.Remove(tempConfigFile)
-
-		extServer, err := server.NewServer(tempConfigFile)
+		// Use test config file directly for docker compatibility
+		configFile := getTestConfigFile("ext")
+		
+		extServer, err := server.NewServer(configFile)
 		require.NoError(t, err)
 
 		// Test that server can be created and configured
@@ -327,11 +320,9 @@ func TestEXT_SMTS_Shutdown(t *testing.T) {
 	// Test configuration validation
 	t.Run("ConfigValidation", func(t *testing.T) {
 		// Test that configuration is properly loaded and validated
-		tempConfigFile, err := createTempConfig(apiServer.URL)
-		require.NoError(t, err)
-		defer os.Remove(tempConfigFile)
-
-		extServer, err := server.NewServer(tempConfigFile)
+		configFile := getTestConfigFile("ext")
+		
+		extServer, err := server.NewServer(configFile)
 		require.NoError(t, err)
 
 		config := extServer.GetConfig()
@@ -345,92 +336,31 @@ func TestEXT_SMTS_Shutdown(t *testing.T) {
 	})
 }
 
-// creates a temporary config file with the specified API URL
-func createTempConfig(apiURL string) (string, error) {
-	// Use different ports for each test to avoid conflicts
-	natsPort := 14222
-	healthPort := 18081
-
-	// Create config with topics section for proper message processing
-	configContent := fmt.Sprintf(`deployment:
-	 type: "ext"
-	 name: "smts-ext-test"
-	 environment: "test"
-
-nats:
-	 embedded: true
-	 host: "localhost"
-	 port: %d
-	 stream:
-	   name: "SMTS_EXT_TEST"
-	   subjects: ["test.monterra.>", "test.pact_update.>"]
-	   retention: "workqueue"
-	   max_age: "1h"
-	   storage: "memory"
-	   replicas: 1
-	 consumer:
-	   durable_name: "SMTS_EXT_TEST_CONSUMER"
-	   ack_policy: "explicit"
-	   deliver_policy: "all"
-
-api:
-	 base_url: "%s"
-	 timeout: "10s"
-	 retry:
-	   max_attempts: 2
-	   backoff: "1s"
-	 auth:
-	   type: "api_key"
-	   api_key: "test-api-key"
-
-dlp:
-	 enabled: false
-	 endpoint: "%s/validate"
-	 timeout: "5s"
-	 retry:
-	   max_attempts: 1
-	   backoff: "1s"
-
-
-logging:
-	 level: "debug"
-	 format: "console"
-	 output: "stdout"
-
-health:
-	 port: %d
-	 path: "/health"
-	 interval: "10s"
-
-topics:
-	 test.monterra.event:
-	   read_roles: ["ext_reader"]
-	   write_roles: ["ext_writer"]
-	   description: "Test monterra events"
-	 test.pact_update.event:
-	   read_roles: ["ext_reader"]
-	   write_roles: ["ext_writer"]
-	   description: "Test pact update events"
-roles:
-	 ext_reader:
-	   description: "EXT network message reader"
-	   topics: ["test.monterra.event", "test.pact_update.event"]
-	 ext_writer:
-	   description: "EXT network message writer"
-	   topics: ["test.monterra.event", "test.pact_update.event"]
-`, natsPort, apiURL, apiURL, healthPort)
-
-	// Create temporary file
-	tempFile, err := ioutil.TempFile("", "ext-test-config.yaml")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer tempFile.Close()
-
-	// Write the config data to temporary file
-	if _, err := tempFile.Write([]byte(configContent)); err != nil {
-		return "", fmt.Errorf("failed to write temp file: %w", err)
+// getTestConfigFile returns the path to the test config file for the given deployment type
+// This works for both native and docker environments
+func getTestConfigFile(deploymentType string) string {
+	// Try to find the test config file in different locations
+	possiblePaths := []string{
+		// Docker container path
+		fmt.Sprintf("/app/tests/configs/%s-test-config.yaml", deploymentType),
+		// Native development path (relative to integration tests)
+		fmt.Sprintf("../configs/%s-test-config.yaml", deploymentType),
+		// Native development path (relative to project root)
+		fmt.Sprintf("tests/configs/%s-test-config.yaml", deploymentType),
+		// Absolute path from current directory
+		fmt.Sprintf("./tests/configs/%s-test-config.yaml", deploymentType),
 	}
 
-	return tempFile.Name(), nil
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	panic(fmt.Sprintf("Test config file for %s deployment not found. Tried paths: %v", deploymentType, possiblePaths))
+}
+
+// Helper function to replace configuration values
+func replaceConfigValue(config, oldValue, newValue string) string {
+	return strings.Replace(config, oldValue, newValue, 1)
 }

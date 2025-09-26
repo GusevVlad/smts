@@ -212,15 +212,13 @@ func TestDLPValidationResponse(t *testing.T) {
 
 func TestTopicPermission(t *testing.T) {
 	permission := &TopicPermission{
-		Topic:       "test.topic",
 		ReadRoles:   []string{"reader"},
 		WriteRoles:  []string{"writer"},
 		Description: "Test topic",
 	}
 
-	if permission.Topic != "test.topic" {
-		t.Errorf("Expected topic 'test.topic', got %s", permission.Topic)
-	}
+	// Topic name is now the map key, not a field in the struct
+	// This test should validate the permission fields instead
 
 	if len(permission.ReadRoles) != 1 || permission.ReadRoles[0] != "reader" {
 		t.Errorf("Expected read roles ['reader'], got %v", permission.ReadRoles)

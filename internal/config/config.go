@@ -58,9 +58,114 @@ func (l *Loader) LoadConfig(configPath string) (*types.Config, error) {
 		l.logger.Info("Configuration file loaded", zap.String("file", v.ConfigFileUsed()))
 	}
 
+	// Debug: Check if topics key exists in the configuration
+	if v.IsSet("topics") {
+		l.logger.Debug("Topics key found in configuration", zap.String("deployment", config.Deployment.Type))
+		topicsMap := v.GetStringMap("topics")
+		l.logger.Debug("Topics map content", zap.Any("topics", topicsMap), zap.Int("topics_count", len(topicsMap)))
+	} else {
+		l.logger.Debug("Topics key NOT found in configuration", zap.String("deployment", config.Deployment.Type))
+	}
+
 	// Unmarshal configuration
 	if err := v.Unmarshal(config); err != nil {
 		return nil, types.WrapSMTSError(err, types.ErrConfigLoad, "Failed to unmarshal configuration")
+	}
+
+	// Debug: Try to manually parse topics configuration
+	if v.IsSet("topics") {
+		topicsMap := v.GetStringMap("topics")
+		l.logger.Debug("Raw topics map", zap.Any("topics", topicsMap), zap.Int("count", len(topicsMap)))
+		
+		// Manually parse topics configuration
+		manuallyParsedTopics := make(map[string]types.TopicPermission)
+		manuallyParsedRoles := make(map[string]types.RoleDefinition)
+		
+		// Parse topics
+		for topicName, topicData := range topicsMap {
+			if topicMap, ok := topicData.(map[string]interface{}); ok {
+				topicPermission := types.TopicPermission{}
+				
+				// Extract read_roles
+				if readRoles, ok := topicMap["read_roles"].([]interface{}); ok {
+					for _, role := range readRoles {
+						if roleStr, ok := role.(string); ok {
+							topicPermission.ReadRoles = append(topicPermission.ReadRoles, roleStr)
+						}
+					}
+				}
+				
+				// Extract write_roles
+				if writeRoles, ok := topicMap["write_roles"].([]interface{}); ok {
+					for _, role := range writeRoles {
+						if roleStr, ok := role.(string); ok {
+							topicPermission.WriteRoles = append(topicPermission.WriteRoles, roleStr)
+						}
+					}
+				}
+				
+				// Extract description
+				if desc, ok := topicMap["description"].(string); ok {
+					topicPermission.Description = desc
+				}
+				
+				manuallyParsedTopics[topicName] = topicPermission
+			}
+		}
+		
+		// Parse roles if they exist at the same level as topics
+		if v.IsSet("roles") {
+			rolesMap := v.GetStringMap("roles")
+			for roleName, roleData := range rolesMap {
+				if roleMap, ok := roleData.(map[string]interface{}); ok {
+					roleDefinition := types.RoleDefinition{}
+					
+					// Extract description
+					if desc, ok := roleMap["description"].(string); ok {
+						roleDefinition.Description = desc
+					}
+					
+					// Extract topics
+					if topics, ok := roleMap["topics"].([]interface{}); ok {
+						for _, topic := range topics {
+							if topicStr, ok := topic.(string); ok {
+								roleDefinition.Topics = append(roleDefinition.Topics, topicStr)
+							}
+						}
+					}
+					
+					manuallyParsedRoles[roleName] = roleDefinition
+				}
+			}
+		}
+		
+		l.logger.Debug("Manually parsed topics",
+			zap.Any("topics", manuallyParsedTopics),
+			zap.Any("roles", manuallyParsedRoles),
+			zap.Int("topics_count", len(manuallyParsedTopics)),
+			zap.Int("roles_count", len(manuallyParsedRoles)))
+		
+		// If manual parsing worked, use the manually parsed topics
+		if len(manuallyParsedTopics) > 0 {
+			config.Topics.Topics = manuallyParsedTopics
+			config.Topics.Roles = manuallyParsedRoles
+			l.logger.Debug("Using manually parsed topics configuration")
+		}
+	}
+
+	// Debug: Log topics configuration after unmarshaling
+	l.logger.Debug("Configuration unmarshaled",
+		zap.Int("topics_count", len(config.Topics.Topics)),
+		zap.Int("roles_count", len(config.Topics.Roles)),
+		zap.String("deployment", config.Deployment.Type))
+	
+	// Debug: Log all topics found
+	for topicName, topic := range config.Topics.Topics {
+		l.logger.Debug("Found topic in config",
+			zap.String("topic", topicName),
+			zap.Strings("read_roles", topic.ReadRoles),
+			zap.Strings("write_roles", topic.WriteRoles),
+			zap.String("deployment", config.Deployment.Type))
 	}
 
 	// Validate configuration
@@ -127,7 +232,7 @@ func (l *Loader) ValidateConfig(config *types.Config) error {
 	}
 
 	// Validate topics configuration
-	if err := l.validateTopics(config.Topics); err != nil {
+	if err := l.validateTopics(config.Topics, config.Deployment.Type); err != nil {
 		return err
 	}
 
@@ -135,9 +240,10 @@ func (l *Loader) ValidateConfig(config *types.Config) error {
 }
 
 // validateTopics validates the topics configuration
-func (l *Loader) validateTopics(topics types.TopicsConfig) error {
+func (l *Loader) validateTopics(topics types.TopicsConfig, deploymentType string) error {
 	if len(topics.Topics) == 0 {
-		l.logger.Warn("No topics configured, service will not process any messages")
+		l.logger.Warn("No topics configured, service will not process any messages",
+			zap.String("deployment", deploymentType))
 	}
 
 	for topicName, topic := range topics.Topics {
@@ -201,7 +307,7 @@ func (l *Loader) applyDeploymentDefaults(config *types.Config) {
 }
 
 // LoadTopicsConfig loads topics configuration from a separate file
-func (l *Loader) LoadTopicsConfig(topicsPath string) (*types.TopicsConfig, error) {
+func (l *Loader) LoadTopicsConfig(topicsPath string, deploymentType string) (*types.TopicsConfig, error) {
 	if topicsPath == "" {
 		// Try default locations
 		defaultPaths := []string{
@@ -218,7 +324,8 @@ func (l *Loader) LoadTopicsConfig(topicsPath string) (*types.TopicsConfig, error
 		}
 
 		if topicsPath == "" {
-			l.logger.Warn("No topics configuration file found, using empty configuration")
+			l.logger.Warn("No topics configuration file found, using empty configuration",
+				zap.String("deployment", deploymentType))
 			return &types.TopicsConfig{
 				Topics: make(map[string]types.TopicPermission),
 				Roles:  make(map[string]types.RoleDefinition),

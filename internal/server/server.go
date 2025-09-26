@@ -33,28 +33,42 @@ type Server struct {
 
 // NewServer creates a new SMTS server
 func NewServer(configPath string) (*Server, error) {
-	// Create logger
-	logger, err := utils.NewLogger("info", "json", "stdout")
+	// Create temporary logger for configuration loading
+	tempLogger, err := utils.NewLogger("info", "json", "stdout")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create logger: %w", err)
+		return nil, fmt.Errorf("failed to create temporary logger: %w", err)
 	}
 
 	// Load configuration
-	configLoader := config.NewLoader(logger)
+	configLoader := config.NewLoader(tempLogger)
 	cfg, err := configLoader.LoadConfig(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
+	// Create proper logger with configuration settings
+	logger, err := utils.NewLogger(cfg.Logging.Level, cfg.Logging.Format, cfg.Logging.Output)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create logger: %w", err)
+	}
+
+	// Recreate config loader with proper logger and reload configuration
+	configLoader = config.NewLoader(logger)
+	cfg, err = configLoader.LoadConfig(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reload configuration: %w", err)
+	}
+
 	// Load topics configuration only if not already defined in main config
 	if len(cfg.Topics.Topics) == 0 && len(cfg.Topics.Roles) == 0 {
-		topicsConfig, err := configLoader.LoadTopicsConfig("")
+		topicsConfig, err := configLoader.LoadTopicsConfig("", cfg.Deployment.Type)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load topics configuration: %w", err)
 		}
 		cfg.Topics = *topicsConfig
 	} else {
-		logger.Info("Using topics configuration from main config file")
+		logger.Info("Using topics configuration from main config file",
+			zap.String("deployment", cfg.Deployment.Type))
 	}
 
 	// Create NATS client

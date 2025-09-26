@@ -54,7 +54,6 @@ type DLPValidationResponse struct {
 
 // TopicPermission represents access control for topics
 type TopicPermission struct {
-	Topic       string   `mapstructure:"topic" json:"topic"`
 	ReadRoles   []string `mapstructure:"read_roles" json:"read_roles"`
 	WriteRoles  []string `mapstructure:"write_roles" json:"write_roles"`
 	Description string   `mapstructure:"description" json:"description"`

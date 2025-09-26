@@ -253,7 +253,6 @@ func TestProcessor_ValidatePermissions_Success(t *testing.T) {
 	config := mocks.CreateTestConfig("ext")
 	config.Topics.Topics = map[string]types.TopicPermission{
 		"monterra.event": {
-			Topic:       "monterra.event",
 			ReadRoles:   []string{"ext_reader"},
 			WriteRoles:  []string{"ext_writer"},
 			Description: "Monterra events",
@@ -289,7 +288,6 @@ func TestProcessor_ValidatePermissions_UnknownTopic(t *testing.T) {
 	config := mocks.CreateTestConfig("ext")
 	config.Topics.Topics = map[string]types.TopicPermission{
 		"monterra.event": {
-			Topic:       "monterra.event",
 			ReadRoles:   []string{"ext_reader"},
 			WriteRoles:  []string{"ext_writer"},
 			Description: "Monterra events",
