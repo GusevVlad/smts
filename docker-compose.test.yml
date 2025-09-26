@@ -4,7 +4,7 @@ services:
   # Test NATS server for integration tests
   nats-test:
     image: nats:2.12-alpine
-    container_name: smts-nats-test
+    container_name: nats-test
     ports:
       - "14222:4222"  # EXT test port
       - "14223:4223"  # INT test port
@@ -34,7 +34,7 @@ services:
   # Test API server for simulating corporate API
   api-mock:
     image: mockserver/mockserver:mockserver-5.15.0
-    container_name: smts-api-mock
+    container_name: api-mock
     ports:
       - "18080:1080"  # EXT test API
       - "18082:1081"  # INT test API
@@ -48,7 +48,7 @@ services:
   # Test DLP service for INT SMTS tests
   dlp-mock:
     image: mockserver/mockserver:mockserver-5.15.0
-    container_name: smts-dlp-mock
+    container_name: dlp-mock
     ports:
       - "18081:1080"  # DLP validation service
     environment:

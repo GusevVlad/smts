@@ -21,7 +21,7 @@ nats:
     deliver_policy: "all"
 
 api:
-  base_url: "http://localhost:18080"  # Test server will run here
+  base_url: "http://api-mock:1080"  # Test server will run here
   timeout: "10s"
   retry:
     max_attempts: 2
@@ -32,7 +32,7 @@ api:
 
 dlp:
   enabled: false
-  endpoint: "http://localhost:18080/validate"
+  endpoint: "http://dlp-mock:1080/validate"
   timeout: "5s"
   retry:
     max_attempts: 1

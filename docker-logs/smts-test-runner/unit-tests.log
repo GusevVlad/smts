@@ -1,16 +1,16 @@
 === RUN   TestAPIClient_DeliverMessage_Success
-2025-09-26T11:38:28.302Z	DEBUG	api/client.go:101	Starting retry logic	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "max_attempts": 3, "backoff": "1s"}
-2025-09-26T11:38:28.303Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "deliver_message", "max_attempts": 3, "backoff": "1s"}
-2025-09-26T11:38:28.303Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 1, "max_attempts": 3}
-2025-09-26T11:38:28.303Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 1, "endpoint": "http://127.0.0.1:37283/monterra.event"}
-2025-09-26T11:38:28.303Z	INFO	api/client.go:177	Message delivered successfully	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "status_code": 200, "duration_ms": 0}
---- PASS: TestAPIClient_DeliverMessage_Success (0.00s)
+2025-09-26T14:39:56.768Z	DEBUG	api/client.go:101	Starting retry logic	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "max_attempts": 3, "backoff": "1s"}
+2025-09-26T14:39:56.768Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "deliver_message", "max_attempts": 3, "backoff": "1s"}
+2025-09-26T14:39:56.768Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 1, "max_attempts": 3}
+2025-09-26T14:39:56.768Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 1, "endpoint": "http://127.0.0.1:37433/monterra.event"}
+2025-09-26T14:39:56.774Z	INFO	api/client.go:177	Message delivered successfully	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "status_code": 200, "duration_ms": 6}
+--- PASS: TestAPIClient_DeliverMessage_Success (0.02s)
 === RUN   TestAPIClient_DeliverMessage_RetrySuccess
-2025-09-26T11:38:28.303Z	DEBUG	api/client.go:101	Starting retry logic	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "max_attempts": 3, "backoff": "100ms"}
-2025-09-26T11:38:28.303Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "deliver_message", "max_attempts": 3, "backoff": "100ms"}
-2025-09-26T11:38:28.303Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 1, "max_attempts": 3}
-2025-09-26T11:38:28.303Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 1, "endpoint": "http://127.0.0.1:36799/monterra.event"}
-2025-09-26T11:38:28.304Z	WARN	utils/retry.go:78	Operation failed, retrying	{"operation": "deliver_message", "attempt": 1, "max_attempts": 3, "error": "SMTS Error [API_RESPONSE_ERROR]: Server error from corporate API - HTTP 500: Internal Server Error (details: )"}
+2025-09-26T14:39:56.776Z	DEBUG	api/client.go:101	Starting retry logic	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "max_attempts": 3, "backoff": "100ms"}
+2025-09-26T14:39:56.776Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "deliver_message", "max_attempts": 3, "backoff": "100ms"}
+2025-09-26T14:39:56.776Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 1, "max_attempts": 3}
+2025-09-26T14:39:56.776Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 1, "endpoint": "http://127.0.0.1:36271/monterra.event"}
+2025-09-26T14:39:56.778Z	WARN	utils/retry.go:78	Operation failed, retrying	{"operation": "deliver_message", "attempt": 1, "max_attempts": 3, "error": "SMTS Error [API_RESPONSE_ERROR]: Server error from corporate API - HTTP 500: Internal Server Error (details: )"}
 github.com/corporate/smts/pkg/utils.Retry
 	/app/pkg/utils/retry.go:78
 github.com/corporate/smts/internal/api.(*Client).DeliverMessage
@@ -19,17 +19,17 @@ github.com/corporate/smts/tests/unit/api_test.TestAPIClient_DeliverMessage_Retry
 	/app/tests/unit/api/client_test.go:101
 testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
-2025-09-26T11:38:28.383Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 2, "max_attempts": 3}
-2025-09-26T11:38:28.383Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 2, "endpoint": "http://127.0.0.1:36799/monterra.event"}
-2025-09-26T11:38:28.383Z	INFO	utils/retry.go:59	Operation succeeded after retry	{"operation": "deliver_message", "attempt": 2}
-2025-09-26T11:38:28.383Z	INFO	api/client.go:177	Message delivered successfully	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "status_code": 200, "duration_ms": 79}
---- PASS: TestAPIClient_DeliverMessage_RetrySuccess (0.08s)
+2025-09-26T14:39:56.864Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 2, "max_attempts": 3}
+2025-09-26T14:39:56.864Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 2, "endpoint": "http://127.0.0.1:36271/monterra.event"}
+2025-09-26T14:39:56.865Z	INFO	utils/retry.go:59	Operation succeeded after retry	{"operation": "deliver_message", "attempt": 2}
+2025-09-26T14:39:56.865Z	INFO	api/client.go:177	Message delivered successfully	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "status_code": 200, "duration_ms": 89}
+--- PASS: TestAPIClient_DeliverMessage_RetrySuccess (0.09s)
 === RUN   TestAPIClient_DeliverMessage_ClientError
-2025-09-26T11:38:28.383Z	DEBUG	api/client.go:101	Starting retry logic	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "max_attempts": 3, "backoff": "1s"}
-2025-09-26T11:38:28.383Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "deliver_message", "max_attempts": 3, "backoff": "1s"}
-2025-09-26T11:38:28.383Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 1, "max_attempts": 3}
-2025-09-26T11:38:28.383Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 1, "endpoint": "http://127.0.0.1:37351/monterra.event"}
-2025-09-26T11:38:28.385Z	WARN	utils/retry.go:78	Operation failed, retrying	{"operation": "deliver_message", "attempt": 1, "max_attempts": 3, "error": "SMTS Error [API_REQUEST_ERROR]: Client error from corporate API - HTTP 400: Bad Request (details: )"}
+2025-09-26T14:39:56.865Z	DEBUG	api/client.go:101	Starting retry logic	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "max_attempts": 3, "backoff": "1s"}
+2025-09-26T14:39:56.865Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "deliver_message", "max_attempts": 3, "backoff": "1s"}
+2025-09-26T14:39:56.865Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 1, "max_attempts": 3}
+2025-09-26T14:39:56.865Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 1, "endpoint": "http://127.0.0.1:38579/monterra.event"}
+2025-09-26T14:39:56.866Z	WARN	utils/retry.go:78	Operation failed, retrying	{"operation": "deliver_message", "attempt": 1, "max_attempts": 3, "error": "SMTS Error [API_REQUEST_ERROR]: Client error from corporate API - HTTP 400: Bad Request (details: )"}
 github.com/corporate/smts/pkg/utils.Retry
 	/app/pkg/utils/retry.go:78
 github.com/corporate/smts/internal/api.(*Client).DeliverMessage
@@ -38,9 +38,9 @@ github.com/corporate/smts/tests/unit/api_test.TestAPIClient_DeliverMessage_Clien
 	/app/tests/unit/api/client_test.go:135
 testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
-2025-09-26T11:38:29.276Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 2, "max_attempts": 3}
-2025-09-26T11:38:29.276Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 2, "endpoint": "http://127.0.0.1:37351/monterra.event"}
-2025-09-26T11:38:29.281Z	WARN	utils/retry.go:78	Operation failed, retrying	{"operation": "deliver_message", "attempt": 2, "max_attempts": 3, "error": "SMTS Error [API_REQUEST_ERROR]: Client error from corporate API - HTTP 400: Bad Request (details: )"}
+2025-09-26T14:39:57.642Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 2, "max_attempts": 3}
+2025-09-26T14:39:57.642Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 2, "endpoint": "http://127.0.0.1:38579/monterra.event"}
+2025-09-26T14:39:57.643Z	WARN	utils/retry.go:78	Operation failed, retrying	{"operation": "deliver_message", "attempt": 2, "max_attempts": 3, "error": "SMTS Error [API_REQUEST_ERROR]: Client error from corporate API - HTTP 400: Bad Request (details: )"}
 github.com/corporate/smts/pkg/utils.Retry
 	/app/pkg/utils/retry.go:78
 github.com/corporate/smts/internal/api.(*Client).DeliverMessage
@@ -49,9 +49,9 @@ github.com/corporate/smts/tests/unit/api_test.TestAPIClient_DeliverMessage_Clien
 	/app/tests/unit/api/client_test.go:135
 testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
-2025-09-26T11:38:29.281Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 3, "max_attempts": 3}
-2025-09-26T11:38:29.281Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 3, "endpoint": "http://127.0.0.1:37351/monterra.event"}
-2025-09-26T11:38:29.281Z	WARN	utils/retry.go:78	Operation failed, retrying	{"operation": "deliver_message", "attempt": 3, "max_attempts": 3, "error": "SMTS Error [API_REQUEST_ERROR]: Client error from corporate API - HTTP 400: Bad Request (details: )"}
+2025-09-26T14:39:57.643Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 3, "max_attempts": 3}
+2025-09-26T14:39:57.643Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 3, "endpoint": "http://127.0.0.1:38579/monterra.event"}
+2025-09-26T14:39:57.643Z	WARN	utils/retry.go:78	Operation failed, retrying	{"operation": "deliver_message", "attempt": 3, "max_attempts": 3, "error": "SMTS Error [API_REQUEST_ERROR]: Client error from corporate API - HTTP 400: Bad Request (details: )"}
 github.com/corporate/smts/pkg/utils.Retry
 	/app/pkg/utils/retry.go:78
 github.com/corporate/smts/internal/api.(*Client).DeliverMessage
@@ -60,7 +60,7 @@ github.com/corporate/smts/tests/unit/api_test.TestAPIClient_DeliverMessage_Clien
 	/app/tests/unit/api/client_test.go:135
 testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
-2025-09-26T11:38:29.281Z	ERROR	utils/retry.go:101	Operation failed after all retry attempts	{"operation": "deliver_message", "attempts": 3, "error": "SMTS Error [API_REQUEST_ERROR]: Client error from corporate API - HTTP 400: Bad Request (details: )"}
+2025-09-26T14:39:57.643Z	ERROR	utils/retry.go:101	Operation failed after all retry attempts	{"operation": "deliver_message", "attempts": 3, "error": "SMTS Error [API_REQUEST_ERROR]: Client error from corporate API - HTTP 400: Bad Request (details: )"}
 github.com/corporate/smts/pkg/utils.Retry
 	/app/pkg/utils/retry.go:101
 github.com/corporate/smts/internal/api.(*Client).DeliverMessage
@@ -69,25 +69,25 @@ github.com/corporate/smts/tests/unit/api_test.TestAPIClient_DeliverMessage_Clien
 	/app/tests/unit/api/client_test.go:135
 testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
-2025-09-26T11:38:29.281Z	ERROR	api/client.go:148	Failed to deliver message	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "error": "SMTS Error [API_REQUEST_ERROR]: Client error from corporate API - HTTP 400: Bad Request (details: )", "duration_ms": 897}
+2025-09-26T14:39:57.643Z	ERROR	api/client.go:148	Failed to deliver message	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "error": "SMTS Error [API_REQUEST_ERROR]: Client error from corporate API - HTTP 400: Bad Request (details: )", "duration_ms": 777}
 github.com/corporate/smts/internal/api.(*Client).DeliverMessage
 	/app/internal/api/client.go:148
 github.com/corporate/smts/tests/unit/api_test.TestAPIClient_DeliverMessage_ClientError
 	/app/tests/unit/api/client_test.go:135
 testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
---- PASS: TestAPIClient_DeliverMessage_ClientError (0.90s)
+--- PASS: TestAPIClient_DeliverMessage_ClientError (0.78s)
 === RUN   TestAPIClient_ValidateMessage_Success
-2025-09-26T11:38:29.281Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "validate_message", "max_attempts": 2, "backoff": "1s"}
-2025-09-26T11:38:29.282Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "validate_message", "attempt": 1, "max_attempts": 2}
-2025-09-26T11:38:29.282Z	DEBUG	api/client.go:231	Sending message for DLP validation	{"operation": "validate_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 1}
-2025-09-26T11:38:29.282Z	INFO	api/client.go:292	Message approved by DLP validation	{"operation": "validate_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "duration_ms": 0}
+2025-09-26T14:39:57.644Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "validate_message", "max_attempts": 2, "backoff": "1s"}
+2025-09-26T14:39:57.644Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "validate_message", "attempt": 1, "max_attempts": 2}
+2025-09-26T14:39:57.644Z	DEBUG	api/client.go:231	Sending message for DLP validation	{"operation": "validate_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 1}
+2025-09-26T14:39:57.645Z	INFO	api/client.go:292	Message approved by DLP validation	{"operation": "validate_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "duration_ms": 1}
 --- PASS: TestAPIClient_ValidateMessage_Success (0.00s)
 === RUN   TestAPIClient_ValidateMessage_Rejected
-2025-09-26T11:38:29.282Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "validate_message", "max_attempts": 2, "backoff": "1s"}
-2025-09-26T11:38:29.282Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "validate_message", "attempt": 1, "max_attempts": 2}
-2025-09-26T11:38:29.282Z	DEBUG	api/client.go:231	Sending message for DLP validation	{"operation": "validate_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 1}
-2025-09-26T11:38:29.283Z	WARN	api/client.go:284	Message rejected by DLP validation	{"operation": "validate_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "reasons": ["Contains sensitive information"], "duration_ms": 0}
+2025-09-26T14:39:57.645Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "validate_message", "max_attempts": 2, "backoff": "1s"}
+2025-09-26T14:39:57.645Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "validate_message", "attempt": 1, "max_attempts": 2}
+2025-09-26T14:39:57.645Z	DEBUG	api/client.go:231	Sending message for DLP validation	{"operation": "validate_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 1}
+2025-09-26T14:39:57.646Z	WARN	api/client.go:284	Message rejected by DLP validation	{"operation": "validate_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "reasons": ["Contains sensitive information"], "duration_ms": 0}
 github.com/corporate/smts/internal/api.(*Client).ValidateMessage
 	/app/internal/api/client.go:284
 github.com/corporate/smts/tests/unit/api_test.TestAPIClient_ValidateMessage_Rejected
@@ -96,7 +96,7 @@ testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
 --- PASS: TestAPIClient_ValidateMessage_Rejected (0.00s)
 === RUN   TestAPIClient_HealthCheck_Success
---- PASS: TestAPIClient_HealthCheck_Success (0.01s)
+--- PASS: TestAPIClient_HealthCheck_Success (0.00s)
 === RUN   TestAPIClient_HealthCheck_Failure
 --- PASS: TestAPIClient_HealthCheck_Failure (0.00s)
 === RUN   TestAPIClient_MessageValidation
@@ -105,9 +105,9 @@ testing.tRunner
 === RUN   TestAPIClient_MessageValidation/empty_message_ID
 === RUN   TestAPIClient_MessageValidation/empty_body
 === RUN   TestAPIClient_MessageValidation/valid_message
-2025-09-26T11:38:29.293Z	DEBUG	api/client.go:101	Starting retry logic	{"operation": "deliver_message", "deployment": "", "message_id": "test-id", "topic": "test.topic", "max_attempts": 0, "backoff": "0s"}
-2025-09-26T11:38:29.293Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "deliver_message", "max_attempts": 0, "backoff": "0s"}
-2025-09-26T11:38:29.293Z	ERROR	utils/retry.go:101	Operation failed after all retry attempts	{"operation": "deliver_message", "attempts": 0}
+2025-09-26T14:39:57.652Z	DEBUG	api/client.go:101	Starting retry logic	{"operation": "deliver_message", "deployment": "", "message_id": "test-id", "topic": "test.topic", "max_attempts": 0, "backoff": "0s"}
+2025-09-26T14:39:57.652Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "deliver_message", "max_attempts": 0, "backoff": "0s"}
+2025-09-26T14:39:57.652Z	ERROR	utils/retry.go:101	Operation failed after all retry attempts	{"operation": "deliver_message", "attempts": 0}
 github.com/corporate/smts/pkg/utils.Retry
 	/app/pkg/utils/retry.go:101
 github.com/corporate/smts/internal/api.(*Client).DeliverMessage
@@ -116,7 +116,7 @@ github.com/corporate/smts/tests/unit/api_test.TestAPIClient_MessageValidation.fu
 	/app/tests/unit/api/client_test.go:324
 testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
-2025-09-26T11:38:29.293Z	ERROR	api/client.go:164	Failed to deliver message - no response	{"operation": "deliver_message", "deployment": "", "message_id": "test-id", "topic": "test.topic", "error": "SMTS Error [API_CONNECTION_ERROR]: No response received from corporate API (details: )", "duration_ms": 0}
+2025-09-26T14:39:57.652Z	ERROR	api/client.go:164	Failed to deliver message - no response	{"operation": "deliver_message", "deployment": "", "message_id": "test-id", "topic": "test.topic", "error": "SMTS Error [API_CONNECTION_ERROR]: No response received from corporate API (details: )", "duration_ms": 0}
 github.com/corporate/smts/internal/api.(*Client).DeliverMessage
 	/app/internal/api/client.go:164
 github.com/corporate/smts/tests/unit/api_test.TestAPIClient_MessageValidation.func1
@@ -130,39 +130,39 @@ testing.tRunner
     --- PASS: TestAPIClient_MessageValidation/empty_body (0.00s)
     --- PASS: TestAPIClient_MessageValidation/valid_message (0.00s)
 === RUN   TestAPIClient_Authentication
-    client_test.go:373: Test server URL: http://127.0.0.1:32949
-    client_test.go:374: Config BaseURL: http://127.0.0.1:32949
+    client_test.go:373: Test server URL: http://127.0.0.1:34585
+    client_test.go:374: Config BaseURL: http://127.0.0.1:34585
     client_test.go:386: Message topic: monterra.event
-    client_test.go:387: Expected endpoint: http://127.0.0.1:32949/monterra.event
-2025-09-26T11:38:29.293Z	DEBUG	api/client.go:101	Starting retry logic	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "max_attempts": 3, "backoff": "1s"}
-2025-09-26T11:38:29.293Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "deliver_message", "max_attempts": 3, "backoff": "1s"}
-2025-09-26T11:38:29.293Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 1, "max_attempts": 3}
-2025-09-26T11:38:29.293Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 1, "endpoint": "http://127.0.0.1:32949/monterra.event"}
-    client_test.go:343: Received headers: map[Accept:[application/json] Accept-Encoding:[gzip] Content-Length:[15] Content-Type:[application/json] User-Agent:[SMTS/1.0] X-Api-Key:[test-api-key] X-Smts-Message-Id:[test-message-123] X-Smts-Source:[test] X-Smts-Timestamp:[2025-09-26T11:38:29Z]]
+    client_test.go:387: Expected endpoint: http://127.0.0.1:34585/monterra.event
+2025-09-26T14:39:57.653Z	DEBUG	api/client.go:101	Starting retry logic	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "max_attempts": 3, "backoff": "1s"}
+2025-09-26T14:39:57.653Z	DEBUG	utils/retry.go:37	Retry function called	{"operation": "deliver_message", "max_attempts": 3, "backoff": "1s"}
+2025-09-26T14:39:57.653Z	DEBUG	utils/retry.go:43	Retry attempt starting	{"operation": "deliver_message", "attempt": 1, "max_attempts": 3}
+2025-09-26T14:39:57.653Z	DEBUG	api/client.go:107	Sending message to corporate API	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "attempt": 1, "endpoint": "http://127.0.0.1:34585/monterra.event"}
+    client_test.go:343: Received headers: map[Accept:[application/json] Accept-Encoding:[gzip] Content-Length:[15] Content-Type:[application/json] User-Agent:[SMTS/1.0] X-Api-Key:[test-api-key] X-Smts-Message-Id:[test-message-123] X-Smts-Source:[test] X-Smts-Timestamp:[2025-09-26T14:39:57Z]]
     client_test.go:344: X-API-Key header value: 'test-api-key'
     client_test.go:345: Request URL: /monterra.event
     client_test.go:346: Request Method: POST
     client_test.go:350: API key correctly received!
-2025-09-26T11:38:29.296Z	INFO	api/client.go:177	Message delivered successfully	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "status_code": 200, "duration_ms": 3}
+2025-09-26T14:39:57.657Z	INFO	api/client.go:177	Message delivered successfully	{"operation": "deliver_message", "deployment": "", "message_id": "test-message-123", "topic": "monterra.event", "status_code": 200, "duration_ms": 3}
     client_test.go:391: API call result: success=true, error=<nil>
     client_test.go:392: API key received by server: true
 --- PASS: TestAPIClient_Authentication (0.00s)
 PASS
-ok  	github.com/corporate/smts/tests/unit/api	1.004s
+ok  	github.com/corporate/smts/tests/unit/api	0.927s
 === RUN   TestProcessor_HandleMessage_EXT_Success
-2025-09-26T11:38:31.856Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
-2025-09-26T11:38:31.856Z	INFO	message/processor.go:81	Message processed successfully	{"operation": "process_message", "deployment": "ext", "message_id": "test-message-123", "topic": "monterra.event", "duration_ms": 0}
+2025-09-26T14:40:01.024Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
+2025-09-26T14:40:01.025Z	INFO	message/processor.go:81	Message processed successfully	{"operation": "process_message", "deployment": "ext", "message_id": "test-message-123", "topic": "monterra.event", "duration_ms": 0}
     processor_test.go:53: PASS:	DeliverMessage(string,*types.Message)
 --- PASS: TestProcessor_HandleMessage_EXT_Success (0.00s)
 === RUN   TestProcessor_HandleMessage_INT_Success
-2025-09-26T11:38:31.856Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
-2025-09-26T11:38:31.856Z	INFO	message/processor.go:81	Message processed successfully	{"operation": "process_message", "deployment": "int", "message_id": "test-message-123", "topic": "monterra.event", "duration_ms": 0}
+2025-09-26T14:40:01.025Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
+2025-09-26T14:40:01.025Z	INFO	message/processor.go:81	Message processed successfully	{"operation": "process_message", "deployment": "int", "message_id": "test-message-123", "topic": "monterra.event", "duration_ms": 0}
     processor_test.go:100: PASS:	ValidateMessage(string,*types.Message)
     processor_test.go:100: PASS:	DeliverMessage(string,*types.Message)
 --- PASS: TestProcessor_HandleMessage_INT_Success (0.00s)
 === RUN   TestProcessor_HandleMessage_INT_DLPRejected
-2025-09-26T11:38:31.856Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
-2025-09-26T11:38:31.856Z	ERROR	message/processor.go:76	Message processing failed	{"operation": "process_message", "deployment": "int", "message_id": "test-message-123", "topic": "monterra.event", "error": "SMTS Error [DLP_VALIDATION_ERROR]: Message rejected by DLP (details: )", "duration_ms": 0}
+2025-09-26T14:40:01.025Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
+2025-09-26T14:40:01.025Z	ERROR	message/processor.go:76	Message processing failed	{"operation": "process_message", "deployment": "int", "message_id": "test-message-123", "topic": "monterra.event", "error": "SMTS Error [DLP_VALIDATION_ERROR]: Message rejected by DLP (details: )", "duration_ms": 0}
 github.com/corporate/smts/internal/message.(*Processor).HandleMessage
 	/app/internal/message/processor.go:76
 github.com/corporate/smts/tests/unit/message_test.TestProcessor_HandleMessage_INT_DLPRejected
@@ -172,8 +172,8 @@ testing.tRunner
     processor_test.go:140: PASS:	ValidateMessage(string,*types.Message)
 --- PASS: TestProcessor_HandleMessage_INT_DLPRejected (0.00s)
 === RUN   TestProcessor_HandleMessage_INT_DLPError
-2025-09-26T11:38:31.856Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
-2025-09-26T11:38:31.856Z	ERROR	message/processor.go:76	Message processing failed	{"operation": "process_message", "deployment": "int", "message_id": "test-message-123", "topic": "monterra.event", "error": "SMTS Error [DLP_CONNECTION_ERROR]: DLP service unavailable (details: )", "duration_ms": 0}
+2025-09-26T14:40:01.025Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
+2025-09-26T14:40:01.025Z	ERROR	message/processor.go:76	Message processing failed	{"operation": "process_message", "deployment": "int", "message_id": "test-message-123", "topic": "monterra.event", "error": "SMTS Error [DLP_CONNECTION_ERROR]: DLP service unavailable (details: )", "duration_ms": 0}
 github.com/corporate/smts/internal/message.(*Processor).HandleMessage
 	/app/internal/message/processor.go:76
 github.com/corporate/smts/tests/unit/message_test.TestProcessor_HandleMessage_INT_DLPError
@@ -183,8 +183,8 @@ testing.tRunner
     processor_test.go:174: PASS:	ValidateMessage(string,*types.Message)
 --- PASS: TestProcessor_HandleMessage_INT_DLPError (0.00s)
 === RUN   TestProcessor_HandleMessage_EXT_DeliveryError
-2025-09-26T11:38:31.857Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
-2025-09-26T11:38:31.857Z	ERROR	message/processor.go:76	Message processing failed	{"operation": "process_message", "deployment": "ext", "message_id": "test-message-123", "topic": "monterra.event", "error": "SMTS Error [API_CONNECTION_ERROR]: API connection failed (details: )", "duration_ms": 0}
+2025-09-26T14:40:01.025Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
+2025-09-26T14:40:01.025Z	ERROR	message/processor.go:76	Message processing failed	{"operation": "process_message", "deployment": "ext", "message_id": "test-message-123", "topic": "monterra.event", "error": "SMTS Error [API_CONNECTION_ERROR]: API connection failed (details: )", "duration_ms": 0}
 github.com/corporate/smts/internal/message.(*Processor).HandleMessage
 	/app/internal/message/processor.go:76
 github.com/corporate/smts/tests/unit/message_test.TestProcessor_HandleMessage_EXT_DeliveryError
@@ -194,8 +194,8 @@ testing.tRunner
     processor_test.go:215: PASS:	DeliverMessage(string,*types.Message)
 --- PASS: TestProcessor_HandleMessage_EXT_DeliveryError (0.00s)
 === RUN   TestProcessor_HandleMessage_UnknownDeployment
-2025-09-26T11:38:31.857Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
-2025-09-26T11:38:31.857Z	ERROR	message/processor.go:76	Message processing failed	{"operation": "process_message", "deployment": "unknown", "message_id": "test-message-123", "topic": "monterra.event", "error": "SMTS Error [MESSAGE_ROUTING_ERROR]: Unknown deployment type: unknown (details: )", "duration_ms": 0}
+2025-09-26T14:40:01.025Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
+2025-09-26T14:40:01.025Z	ERROR	message/processor.go:76	Message processing failed	{"operation": "process_message", "deployment": "unknown", "message_id": "test-message-123", "topic": "monterra.event", "error": "SMTS Error [MESSAGE_ROUTING_ERROR]: Unknown deployment type: unknown (details: )", "duration_ms": 0}
 github.com/corporate/smts/internal/message.(*Processor).HandleMessage
 	/app/internal/message/processor.go:76
 github.com/corporate/smts/tests/unit/message_test.TestProcessor_HandleMessage_UnknownDeployment
@@ -204,20 +204,20 @@ testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
 --- PASS: TestProcessor_HandleMessage_UnknownDeployment (0.00s)
 === RUN   TestProcessor_ValidatePermissions_Success
-2025-09-26T11:38:31.857Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
+2025-09-26T14:40:01.025Z	DEBUG	message/processor.go:145	Message permission validated	{"topic": "monterra.event", "message_id": "test-message-123"}
 --- PASS: TestProcessor_ValidatePermissions_Success (0.00s)
 === RUN   TestProcessor_ValidatePermissions_UnknownTopic
 --- PASS: TestProcessor_ValidatePermissions_UnknownTopic (0.00s)
 === RUN   TestProcessor_HealthCheck_Success
-    processor_test.go:343: PASS:	HealthCheck(string)
-    processor_test.go:344: PASS:	HealthCheck(string)
+    processor_test.go:341: PASS:	HealthCheck(string)
+    processor_test.go:342: PASS:	HealthCheck(string)
 --- PASS: TestProcessor_HealthCheck_Success (0.00s)
 === RUN   TestProcessor_HealthCheck_APIError
-    processor_test.go:368: PASS:	HealthCheck(string)
+    processor_test.go:366: PASS:	HealthCheck(string)
 --- PASS: TestProcessor_HealthCheck_APIError (0.00s)
 === RUN   TestProcessor_HealthCheck_NATSError
-    processor_test.go:393: PASS:	HealthCheck(string)
-    processor_test.go:394: PASS:	HealthCheck(string)
+    processor_test.go:391: PASS:	HealthCheck(string)
+    processor_test.go:392: PASS:	HealthCheck(string)
 --- PASS: TestProcessor_HealthCheck_NATSError (0.00s)
 === RUN   TestProcessor_DeploymentTypeMethods
 === RUN   TestProcessor_DeploymentTypeMethods/EXT_deployment
@@ -226,82 +226,82 @@ testing.tRunner
     --- PASS: TestProcessor_DeploymentTypeMethods/EXT_deployment (0.00s)
     --- PASS: TestProcessor_DeploymentTypeMethods/INT_deployment (0.00s)
 PASS
-ok  	github.com/corporate/smts/tests/unit/message	0.004s
+ok  	github.com/corporate/smts/tests/unit/message	0.006s
 === RUN   TestNewClient
 === RUN   TestNewClient/success_with_embedded_server
-2025-09-26T11:38:31.920Z	INFO	nats/embedded.go:152	Starting nats-server
-2025-09-26T11:38:31.920Z	INFO	nats/embedded.go:152	  Version:  2.9.21
-2025-09-26T11:38:31.920Z	INFO	nats/embedded.go:152	  Git:      [not set]
-2025-09-26T11:38:31.920Z	INFO	nats/embedded.go:152	  Name:     NDUXUJAYBLCEMHV2ZXUOYRTFMNLDA4RCGAQWL3P2Z7T6N76VOL7HYU6L
-2025-09-26T11:38:31.920Z	INFO	nats/embedded.go:152	  Node:     4lEMHQJm
-2025-09-26T11:38:31.920Z	INFO	nats/embedded.go:152	  ID:       NDUXUJAYBLCEMHV2ZXUOYRTFMNLDA4RCGAQWL3P2Z7T6N76VOL7HYU6L
-2025-09-26T11:38:31.921Z	INFO	nats/embedded.go:152	Starting JetStream
-2025-09-26T11:38:31.929Z	INFO	nats/embedded.go:152	    _ ___ _____ ___ _____ ___ ___   _   __  __
-2025-09-26T11:38:31.929Z	INFO	nats/embedded.go:152	 _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
-2025-09-26T11:38:31.929Z	INFO	nats/embedded.go:152	| || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
-2025-09-26T11:38:31.929Z	INFO	nats/embedded.go:152	 \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
-2025-09-26T11:38:31.929Z	INFO	nats/embedded.go:152	
-2025-09-26T11:38:31.929Z	INFO	nats/embedded.go:152	         https://docs.nats.io/jetstream
-2025-09-26T11:38:31.929Z	INFO	nats/embedded.go:152	
-2025-09-26T11:38:31.929Z	INFO	nats/embedded.go:152	---------------- JETSTREAM ----------------
-2025-09-26T11:38:31.929Z	INFO	nats/embedded.go:152	  Max Memory:      256.00 MB
-2025-09-26T11:38:31.929Z	INFO	nats/embedded.go:152	  Max Storage:     512.00 MB
-2025-09-26T11:38:31.929Z	INFO	nats/embedded.go:152	  Store Directory: "/tmp/smts-nats/jetstream"
-2025-09-26T11:38:31.929Z	INFO	nats/embedded.go:152	-------------------------------------------
-2025-09-26T11:38:31.957Z	INFO	nats/embedded.go:152	Listening for client connections on localhost:14224
-2025-09-26T11:38:31.958Z	INFO	nats/embedded.go:152	Server is ready
-2025-09-26T11:38:36.960Z	INFO	nats/embedded.go:100	Embedded NATS server started	{"host": "localhost", "port": 14224, "store_dir": "/tmp/smts-nats"}
-2025-09-26T11:38:36.962Z	INFO	nats/client.go:50	Embedded NATS server started
-2025-09-26T11:38:36.971Z	INFO	nats/client.go:128	Connected to NATS server	{"url": "nats://localhost:14224"}
-2025-09-26T11:38:36.971Z	INFO	nats/client.go:66	NATS JetStream client initialized	{"host": "localhost", "port": 14224, "embedded": true}
-2025-09-26T11:38:36.971Z	INFO	nats/client.go:136	NATS connection closed
-2025-09-26T11:38:36.972Z	INFO	nats/embedded.go:152	Initiating Shutdown...
-2025-09-26T11:38:36.972Z	INFO	nats/embedded.go:152	Initiating JetStream Shutdown...
-2025-09-26T11:38:36.972Z	INFO	nats/embedded.go:152	JetStream Shutdown
-2025-09-26T11:38:36.972Z	WARN	nats/client.go:117	NATS connection disconnected
+2025-09-26T14:40:01.089Z	INFO	nats/embedded.go:152	Starting nats-server
+2025-09-26T14:40:01.089Z	INFO	nats/embedded.go:152	  Version:  2.9.21
+2025-09-26T14:40:01.089Z	INFO	nats/embedded.go:152	  Git:      [not set]
+2025-09-26T14:40:01.089Z	INFO	nats/embedded.go:152	  Name:     NA64DD5ABUIOFLXQEKAUND4WTTIQGS66DIIHZ7EHKQCKB4RMEWPDMPLH
+2025-09-26T14:40:01.089Z	INFO	nats/embedded.go:152	  Node:     cUaC82Jx
+2025-09-26T14:40:01.089Z	INFO	nats/embedded.go:152	  ID:       NA64DD5ABUIOFLXQEKAUND4WTTIQGS66DIIHZ7EHKQCKB4RMEWPDMPLH
+2025-09-26T14:40:01.089Z	INFO	nats/embedded.go:152	Starting JetStream
+2025-09-26T14:40:01.096Z	INFO	nats/embedded.go:152	    _ ___ _____ ___ _____ ___ ___   _   __  __
+2025-09-26T14:40:01.096Z	INFO	nats/embedded.go:152	 _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
+2025-09-26T14:40:01.096Z	INFO	nats/embedded.go:152	| || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
+2025-09-26T14:40:01.096Z	INFO	nats/embedded.go:152	 \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
+2025-09-26T14:40:01.096Z	INFO	nats/embedded.go:152	
+2025-09-26T14:40:01.096Z	INFO	nats/embedded.go:152	         https://docs.nats.io/jetstream
+2025-09-26T14:40:01.096Z	INFO	nats/embedded.go:152	
+2025-09-26T14:40:01.096Z	INFO	nats/embedded.go:152	---------------- JETSTREAM ----------------
+2025-09-26T14:40:01.096Z	INFO	nats/embedded.go:152	  Max Memory:      256.00 MB
+2025-09-26T14:40:01.096Z	INFO	nats/embedded.go:152	  Max Storage:     512.00 MB
+2025-09-26T14:40:01.096Z	INFO	nats/embedded.go:152	  Store Directory: "/tmp/smts-nats/jetstream"
+2025-09-26T14:40:01.096Z	INFO	nats/embedded.go:152	-------------------------------------------
+2025-09-26T14:40:01.107Z	INFO	nats/embedded.go:152	Listening for client connections on localhost:14224
+2025-09-26T14:40:01.107Z	INFO	nats/embedded.go:152	Server is ready
+2025-09-26T14:40:06.113Z	INFO	nats/embedded.go:100	Embedded NATS server started	{"host": "localhost", "port": 14224, "store_dir": "/tmp/smts-nats"}
+2025-09-26T14:40:06.114Z	INFO	nats/client.go:50	Embedded NATS server started
+2025-09-26T14:40:06.122Z	INFO	nats/client.go:128	Connected to NATS server	{"url": "nats://localhost:14224"}
+2025-09-26T14:40:06.122Z	INFO	nats/client.go:66	NATS JetStream client initialized	{"host": "localhost", "port": 14224, "embedded": true}
+2025-09-26T14:40:06.123Z	INFO	nats/client.go:136	NATS connection closed
+2025-09-26T14:40:06.123Z	WARN	nats/client.go:117	NATS connection disconnected
 github.com/corporate/smts/internal/nats.(*Client).connect.func1
 	/app/internal/nats/client.go:117
 github.com/nats-io/nats%2ego.(*Conn).close.func1
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:5084
 github.com/nats-io/nats%2ego.(*asyncCallbacksHandler).asyncCBDispatcher
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:2857
-2025-09-26T11:38:36.972Z	ERROR	nats/client.go:125	NATS connection closed
+2025-09-26T14:40:06.123Z	ERROR	nats/client.go:125	NATS connection closed
 github.com/corporate/smts/internal/nats.(*Client).connect.func3
 	/app/internal/nats/client.go:125
 github.com/nats-io/nats%2ego.(*Conn).close.func3
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:5090
 github.com/nats-io/nats%2ego.(*asyncCallbacksHandler).asyncCBDispatcher
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:2857
-2025-09-26T11:38:36.972Z	INFO	nats/embedded.go:152	Server Exiting..
-2025-09-26T11:38:36.972Z	INFO	nats/embedded.go:112	Embedded NATS server stopped
-2025-09-26T11:38:36.972Z	INFO	nats/client.go:141	Embedded NATS server stopped
+2025-09-26T14:40:06.123Z	INFO	nats/embedded.go:152	Initiating Shutdown...
+2025-09-26T14:40:06.123Z	INFO	nats/embedded.go:152	Initiating JetStream Shutdown...
+2025-09-26T14:40:06.123Z	INFO	nats/embedded.go:152	JetStream Shutdown
+2025-09-26T14:40:06.125Z	INFO	nats/embedded.go:152	Server Exiting..
+2025-09-26T14:40:06.126Z	INFO	nats/embedded.go:112	Embedded NATS server stopped
+2025-09-26T14:40:06.126Z	INFO	nats/client.go:141	Embedded NATS server stopped
 === RUN   TestNewClient/success_with_external_server
     client_test.go:71: Skipping external server test: no NATS server available on localhost:14225
 === RUN   TestNewClient/invalid_port
-2025-09-26T11:38:36.975Z	INFO	nats/embedded.go:152	Starting nats-server
-2025-09-26T11:38:36.975Z	INFO	nats/embedded.go:152	  Version:  2.9.21
-2025-09-26T11:38:36.975Z	INFO	nats/embedded.go:152	  Git:      [not set]
-2025-09-26T11:38:36.975Z	INFO	nats/embedded.go:152	  Name:     NAR5KAB4GTQVM3OTQWBETBMYGUXD4YGWEALBTL34HETECUGMUKYEKW64
-2025-09-26T11:38:36.975Z	INFO	nats/embedded.go:152	  Node:     SZDoVbWx
-2025-09-26T11:38:36.975Z	INFO	nats/embedded.go:152	  ID:       NAR5KAB4GTQVM3OTQWBETBMYGUXD4YGWEALBTL34HETECUGMUKYEKW64
-2025-09-26T11:38:36.976Z	INFO	nats/embedded.go:152	Starting JetStream
-2025-09-26T11:38:36.979Z	INFO	nats/embedded.go:152	    _ ___ _____ ___ _____ ___ ___   _   __  __
-2025-09-26T11:38:36.979Z	INFO	nats/embedded.go:152	 _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
-2025-09-26T11:38:36.979Z	INFO	nats/embedded.go:152	| || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
-2025-09-26T11:38:36.979Z	INFO	nats/embedded.go:152	 \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
-2025-09-26T11:38:36.979Z	INFO	nats/embedded.go:152	
-2025-09-26T11:38:36.979Z	INFO	nats/embedded.go:152	         https://docs.nats.io/jetstream
-2025-09-26T11:38:36.979Z	INFO	nats/embedded.go:152	
-2025-09-26T11:38:36.979Z	INFO	nats/embedded.go:152	---------------- JETSTREAM ----------------
-2025-09-26T11:38:36.979Z	INFO	nats/embedded.go:152	  Max Memory:      256.00 MB
-2025-09-26T11:38:36.979Z	INFO	nats/embedded.go:152	  Max Storage:     512.00 MB
-2025-09-26T11:38:36.979Z	INFO	nats/embedded.go:152	  Store Directory: "/tmp/smts-nats/jetstream"
-2025-09-26T11:38:36.979Z	INFO	nats/embedded.go:152	-------------------------------------------
-2025-09-26T11:38:36.981Z	INFO	nats/embedded.go:152	Listening for client connections on localhost:4222
-2025-09-26T11:38:36.981Z	INFO	nats/embedded.go:152	Server is ready
-2025-09-26T11:38:42.006Z	INFO	nats/embedded.go:100	Embedded NATS server started	{"host": "localhost", "port": 0, "store_dir": "/tmp/smts-nats"}
-2025-09-26T11:38:42.006Z	INFO	nats/client.go:50	Embedded NATS server started
-2025-09-26T11:38:42.009Z	WARN	nats/client.go:100	Failed to connect to NATS server, retrying	{"url": "nats://localhost:0", "attempt": 1, "max_attempts": 5, "error": "nats: no servers available for connection"}
+2025-09-26T14:40:06.134Z	INFO	nats/embedded.go:152	Starting nats-server
+2025-09-26T14:40:06.134Z	INFO	nats/embedded.go:152	  Version:  2.9.21
+2025-09-26T14:40:06.134Z	INFO	nats/embedded.go:152	  Git:      [not set]
+2025-09-26T14:40:06.134Z	INFO	nats/embedded.go:152	  Name:     NDHZQTG66DNPPVLTS4LZ7HCL5C4GPSQB7UD3G4EU6CPWLWMWPKZWDZ75
+2025-09-26T14:40:06.134Z	INFO	nats/embedded.go:152	  Node:     UFBAUaEk
+2025-09-26T14:40:06.134Z	INFO	nats/embedded.go:152	  ID:       NDHZQTG66DNPPVLTS4LZ7HCL5C4GPSQB7UD3G4EU6CPWLWMWPKZWDZ75
+2025-09-26T14:40:06.134Z	INFO	nats/embedded.go:152	Starting JetStream
+2025-09-26T14:40:06.137Z	INFO	nats/embedded.go:152	    _ ___ _____ ___ _____ ___ ___   _   __  __
+2025-09-26T14:40:06.137Z	INFO	nats/embedded.go:152	 _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
+2025-09-26T14:40:06.137Z	INFO	nats/embedded.go:152	| || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
+2025-09-26T14:40:06.137Z	INFO	nats/embedded.go:152	 \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
+2025-09-26T14:40:06.137Z	INFO	nats/embedded.go:152	
+2025-09-26T14:40:06.137Z	INFO	nats/embedded.go:152	         https://docs.nats.io/jetstream
+2025-09-26T14:40:06.137Z	INFO	nats/embedded.go:152	
+2025-09-26T14:40:06.137Z	INFO	nats/embedded.go:152	---------------- JETSTREAM ----------------
+2025-09-26T14:40:06.137Z	INFO	nats/embedded.go:152	  Max Memory:      256.00 MB
+2025-09-26T14:40:06.137Z	INFO	nats/embedded.go:152	  Max Storage:     512.00 MB
+2025-09-26T14:40:06.137Z	INFO	nats/embedded.go:152	  Store Directory: "/tmp/smts-nats/jetstream"
+2025-09-26T14:40:06.137Z	INFO	nats/embedded.go:152	-------------------------------------------
+2025-09-26T14:40:06.139Z	INFO	nats/embedded.go:152	Listening for client connections on localhost:4222
+2025-09-26T14:40:06.139Z	INFO	nats/embedded.go:152	Server is ready
+2025-09-26T14:40:11.164Z	INFO	nats/embedded.go:100	Embedded NATS server started	{"host": "localhost", "port": 0, "store_dir": "/tmp/smts-nats"}
+2025-09-26T14:40:11.164Z	INFO	nats/client.go:50	Embedded NATS server started
+2025-09-26T14:40:11.169Z	WARN	nats/client.go:100	Failed to connect to NATS server, retrying	{"url": "nats://localhost:0", "attempt": 1, "max_attempts": 5, "error": "nats: no servers available for connection"}
 github.com/corporate/smts/internal/nats.(*Client).connect
 	/app/internal/nats/client.go:100
 github.com/corporate/smts/internal/nats.NewClient
@@ -310,7 +310,7 @@ github.com/corporate/smts/tests/unit/nats_test.TestNewClient.func1
 	/app/tests/unit/nats/client_test.go:74
 testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
-2025-09-26T11:38:44.012Z	WARN	nats/client.go:100	Failed to connect to NATS server, retrying	{"url": "nats://localhost:0", "attempt": 2, "max_attempts": 5, "error": "nats: no servers available for connection"}
+2025-09-26T14:40:13.173Z	WARN	nats/client.go:100	Failed to connect to NATS server, retrying	{"url": "nats://localhost:0", "attempt": 2, "max_attempts": 5, "error": "nats: no servers available for connection"}
 github.com/corporate/smts/internal/nats.(*Client).connect
 	/app/internal/nats/client.go:100
 github.com/corporate/smts/internal/nats.NewClient
@@ -319,7 +319,7 @@ github.com/corporate/smts/tests/unit/nats_test.TestNewClient.func1
 	/app/tests/unit/nats/client_test.go:74
 testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
-2025-09-26T11:38:46.015Z	WARN	nats/client.go:100	Failed to connect to NATS server, retrying	{"url": "nats://localhost:0", "attempt": 3, "max_attempts": 5, "error": "nats: no servers available for connection"}
+2025-09-26T14:40:15.181Z	WARN	nats/client.go:100	Failed to connect to NATS server, retrying	{"url": "nats://localhost:0", "attempt": 3, "max_attempts": 5, "error": "nats: no servers available for connection"}
 github.com/corporate/smts/internal/nats.(*Client).connect
 	/app/internal/nats/client.go:100
 github.com/corporate/smts/internal/nats.NewClient
@@ -328,7 +328,7 @@ github.com/corporate/smts/tests/unit/nats_test.TestNewClient.func1
 	/app/tests/unit/nats/client_test.go:74
 testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
-2025-09-26T11:38:48.020Z	WARN	nats/client.go:100	Failed to connect to NATS server, retrying	{"url": "nats://localhost:0", "attempt": 4, "max_attempts": 5, "error": "nats: no servers available for connection"}
+2025-09-26T14:40:17.188Z	WARN	nats/client.go:100	Failed to connect to NATS server, retrying	{"url": "nats://localhost:0", "attempt": 4, "max_attempts": 5, "error": "nats: no servers available for connection"}
 github.com/corporate/smts/internal/nats.(*Client).connect
 	/app/internal/nats/client.go:100
 github.com/corporate/smts/internal/nats.NewClient
@@ -338,155 +338,155 @@ github.com/corporate/smts/tests/unit/nats_test.TestNewClient.func1
 testing.tRunner
 	/usr/local/go/src/testing/testing.go:1934
 --- PASS: TestNewClient (18.11s)
-    --- PASS: TestNewClient/success_with_embedded_server (5.06s)
-    --- SKIP: TestNewClient/success_with_external_server (0.00s)
-    --- PASS: TestNewClient/invalid_port (13.05s)
+    --- PASS: TestNewClient/success_with_embedded_server (5.04s)
+    --- SKIP: TestNewClient/success_with_external_server (0.01s)
+    --- PASS: TestNewClient/invalid_port (13.06s)
 === RUN   TestClient_HealthCheck
-2025-09-26T11:38:50.031Z	INFO	nats/embedded.go:152	Starting nats-server
-2025-09-26T11:38:50.032Z	INFO	nats/embedded.go:152	  Version:  2.9.21
-2025-09-26T11:38:50.032Z	INFO	nats/embedded.go:152	  Git:      [not set]
-2025-09-26T11:38:50.032Z	INFO	nats/embedded.go:152	  Name:     NCXXL2PNUWJAXTD3PKKRZPRATXR3QXWAZ2MJM356VDOANTIPMOYUSYFH
-2025-09-26T11:38:50.032Z	INFO	nats/embedded.go:152	  Node:     nlThKLEy
-2025-09-26T11:38:50.032Z	INFO	nats/embedded.go:152	  ID:       NCXXL2PNUWJAXTD3PKKRZPRATXR3QXWAZ2MJM356VDOANTIPMOYUSYFH
-2025-09-26T11:38:50.034Z	INFO	nats/embedded.go:152	Starting JetStream
-2025-09-26T11:38:50.035Z	INFO	nats/embedded.go:152	    _ ___ _____ ___ _____ ___ ___   _   __  __
-2025-09-26T11:38:50.035Z	INFO	nats/embedded.go:152	 _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
-2025-09-26T11:38:50.035Z	INFO	nats/embedded.go:152	| || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
-2025-09-26T11:38:50.035Z	INFO	nats/embedded.go:152	 \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
-2025-09-26T11:38:50.035Z	INFO	nats/embedded.go:152	
-2025-09-26T11:38:50.035Z	INFO	nats/embedded.go:152	         https://docs.nats.io/jetstream
-2025-09-26T11:38:50.035Z	INFO	nats/embedded.go:152	
-2025-09-26T11:38:50.035Z	INFO	nats/embedded.go:152	---------------- JETSTREAM ----------------
-2025-09-26T11:38:50.035Z	INFO	nats/embedded.go:152	  Max Memory:      256.00 MB
-2025-09-26T11:38:50.035Z	INFO	nats/embedded.go:152	  Max Storage:     512.00 MB
-2025-09-26T11:38:50.035Z	INFO	nats/embedded.go:152	  Store Directory: "/tmp/smts-nats/jetstream"
-2025-09-26T11:38:50.035Z	INFO	nats/embedded.go:152	-------------------------------------------
-2025-09-26T11:38:50.036Z	INFO	nats/embedded.go:152	Listening for client connections on localhost:14226
-2025-09-26T11:38:50.036Z	INFO	nats/embedded.go:152	Server is ready
-2025-09-26T11:38:55.063Z	INFO	nats/embedded.go:100	Embedded NATS server started	{"host": "localhost", "port": 14226, "store_dir": "/tmp/smts-nats"}
-2025-09-26T11:38:55.065Z	INFO	nats/client.go:50	Embedded NATS server started
-2025-09-26T11:38:55.075Z	INFO	nats/client.go:128	Connected to NATS server	{"url": "nats://localhost:14226"}
-2025-09-26T11:38:55.077Z	INFO	nats/client.go:66	NATS JetStream client initialized	{"host": "localhost", "port": 14226, "embedded": true}
-2025-09-26T11:38:55.185Z	INFO	nats/client.go:136	NATS connection closed
-2025-09-26T11:38:55.186Z	INFO	nats/embedded.go:152	Initiating Shutdown...
-2025-09-26T11:38:55.186Z	INFO	nats/embedded.go:152	Initiating JetStream Shutdown...
-2025-09-26T11:38:55.186Z	INFO	nats/embedded.go:152	JetStream Shutdown
-2025-09-26T11:38:55.187Z	WARN	nats/client.go:117	NATS connection disconnected
+2025-09-26T14:40:19.195Z	INFO	nats/embedded.go:152	Starting nats-server
+2025-09-26T14:40:19.195Z	INFO	nats/embedded.go:152	  Version:  2.9.21
+2025-09-26T14:40:19.195Z	INFO	nats/embedded.go:152	  Git:      [not set]
+2025-09-26T14:40:19.195Z	INFO	nats/embedded.go:152	  Name:     NBQY5T3VHMCXUDQQNZJPFB73N3VU335GTWAPVVWUYCBACDPGJDLKZLAS
+2025-09-26T14:40:19.195Z	INFO	nats/embedded.go:152	  Node:     g2VeWMV0
+2025-09-26T14:40:19.195Z	INFO	nats/embedded.go:152	  ID:       NBQY5T3VHMCXUDQQNZJPFB73N3VU335GTWAPVVWUYCBACDPGJDLKZLAS
+2025-09-26T14:40:19.197Z	INFO	nats/embedded.go:152	Starting JetStream
+2025-09-26T14:40:19.200Z	INFO	nats/embedded.go:152	    _ ___ _____ ___ _____ ___ ___   _   __  __
+2025-09-26T14:40:19.200Z	INFO	nats/embedded.go:152	 _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
+2025-09-26T14:40:19.200Z	INFO	nats/embedded.go:152	| || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
+2025-09-26T14:40:19.200Z	INFO	nats/embedded.go:152	 \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
+2025-09-26T14:40:19.200Z	INFO	nats/embedded.go:152	
+2025-09-26T14:40:19.200Z	INFO	nats/embedded.go:152	         https://docs.nats.io/jetstream
+2025-09-26T14:40:19.200Z	INFO	nats/embedded.go:152	
+2025-09-26T14:40:19.200Z	INFO	nats/embedded.go:152	---------------- JETSTREAM ----------------
+2025-09-26T14:40:19.200Z	INFO	nats/embedded.go:152	  Max Memory:      256.00 MB
+2025-09-26T14:40:19.200Z	INFO	nats/embedded.go:152	  Max Storage:     512.00 MB
+2025-09-26T14:40:19.200Z	INFO	nats/embedded.go:152	  Store Directory: "/tmp/smts-nats/jetstream"
+2025-09-26T14:40:19.200Z	INFO	nats/embedded.go:152	-------------------------------------------
+2025-09-26T14:40:19.211Z	INFO	nats/embedded.go:152	Listening for client connections on localhost:14226
+2025-09-26T14:40:19.211Z	INFO	nats/embedded.go:152	Server is ready
+2025-09-26T14:40:24.221Z	INFO	nats/embedded.go:100	Embedded NATS server started	{"host": "localhost", "port": 14226, "store_dir": "/tmp/smts-nats"}
+2025-09-26T14:40:24.222Z	INFO	nats/client.go:50	Embedded NATS server started
+2025-09-26T14:40:24.234Z	INFO	nats/client.go:128	Connected to NATS server	{"url": "nats://localhost:14226"}
+2025-09-26T14:40:24.234Z	INFO	nats/client.go:66	NATS JetStream client initialized	{"host": "localhost", "port": 14226, "embedded": true}
+2025-09-26T14:40:24.337Z	INFO	nats/client.go:136	NATS connection closed
+2025-09-26T14:40:24.337Z	WARN	nats/client.go:117	NATS connection disconnected
 github.com/corporate/smts/internal/nats.(*Client).connect.func1
 	/app/internal/nats/client.go:117
 github.com/nats-io/nats%2ego.(*Conn).close.func1
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:5084
 github.com/nats-io/nats%2ego.(*asyncCallbacksHandler).asyncCBDispatcher
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:2857
-2025-09-26T11:38:55.187Z	ERROR	nats/client.go:125	NATS connection closed
+2025-09-26T14:40:24.337Z	ERROR	nats/client.go:125	NATS connection closed
 github.com/corporate/smts/internal/nats.(*Client).connect.func3
 	/app/internal/nats/client.go:125
 github.com/nats-io/nats%2ego.(*Conn).close.func3
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:5090
 github.com/nats-io/nats%2ego.(*asyncCallbacksHandler).asyncCBDispatcher
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:2857
-2025-09-26T11:38:55.187Z	INFO	nats/embedded.go:152	Server Exiting..
-2025-09-26T11:38:55.187Z	INFO	nats/embedded.go:112	Embedded NATS server stopped
-2025-09-26T11:38:55.187Z	INFO	nats/client.go:141	Embedded NATS server stopped
---- PASS: TestClient_HealthCheck (5.16s)
+2025-09-26T14:40:24.338Z	INFO	nats/embedded.go:152	Initiating Shutdown...
+2025-09-26T14:40:24.338Z	INFO	nats/embedded.go:152	Initiating JetStream Shutdown...
+2025-09-26T14:40:24.340Z	INFO	nats/embedded.go:152	JetStream Shutdown
+2025-09-26T14:40:24.341Z	INFO	nats/embedded.go:152	Server Exiting..
+2025-09-26T14:40:24.341Z	INFO	nats/embedded.go:112	Embedded NATS server stopped
+2025-09-26T14:40:24.341Z	INFO	nats/client.go:141	Embedded NATS server stopped
+--- PASS: TestClient_HealthCheck (5.15s)
 === RUN   TestClient_CreateStream
-2025-09-26T11:38:55.189Z	INFO	nats/embedded.go:152	Starting nats-server
-2025-09-26T11:38:55.189Z	INFO	nats/embedded.go:152	  Version:  2.9.21
-2025-09-26T11:38:55.189Z	INFO	nats/embedded.go:152	  Git:      [not set]
-2025-09-26T11:38:55.189Z	INFO	nats/embedded.go:152	  Name:     NABKIC7EOYNSTIHW2ZDXDC3FD6EQVFBZLLP5FQJRSXLZF4UXKIPJLCZJ
-2025-09-26T11:38:55.189Z	INFO	nats/embedded.go:152	  Node:     HTk097f9
-2025-09-26T11:38:55.189Z	INFO	nats/embedded.go:152	  ID:       NABKIC7EOYNSTIHW2ZDXDC3FD6EQVFBZLLP5FQJRSXLZF4UXKIPJLCZJ
-2025-09-26T11:38:55.190Z	INFO	nats/embedded.go:152	Starting JetStream
-2025-09-26T11:38:55.192Z	INFO	nats/embedded.go:152	    _ ___ _____ ___ _____ ___ ___   _   __  __
-2025-09-26T11:38:55.192Z	INFO	nats/embedded.go:152	 _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
-2025-09-26T11:38:55.192Z	INFO	nats/embedded.go:152	| || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
-2025-09-26T11:38:55.192Z	INFO	nats/embedded.go:152	 \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
-2025-09-26T11:38:55.192Z	INFO	nats/embedded.go:152	
-2025-09-26T11:38:55.192Z	INFO	nats/embedded.go:152	         https://docs.nats.io/jetstream
-2025-09-26T11:38:55.192Z	INFO	nats/embedded.go:152	
-2025-09-26T11:38:55.192Z	INFO	nats/embedded.go:152	---------------- JETSTREAM ----------------
-2025-09-26T11:38:55.192Z	INFO	nats/embedded.go:152	  Max Memory:      256.00 MB
-2025-09-26T11:38:55.192Z	INFO	nats/embedded.go:152	  Max Storage:     512.00 MB
-2025-09-26T11:38:55.192Z	INFO	nats/embedded.go:152	  Store Directory: "/tmp/smts-nats/jetstream"
-2025-09-26T11:38:55.192Z	INFO	nats/embedded.go:152	-------------------------------------------
-2025-09-26T11:38:55.194Z	INFO	nats/embedded.go:152	Listening for client connections on localhost:14227
-2025-09-26T11:38:55.194Z	INFO	nats/embedded.go:152	Server is ready
-2025-09-26T11:39:00.213Z	INFO	nats/embedded.go:100	Embedded NATS server started	{"host": "localhost", "port": 14227, "store_dir": "/tmp/smts-nats"}
-2025-09-26T11:39:00.214Z	INFO	nats/client.go:50	Embedded NATS server started
-2025-09-26T11:39:00.221Z	INFO	nats/client.go:128	Connected to NATS server	{"url": "nats://localhost:14227"}
-2025-09-26T11:39:00.222Z	INFO	nats/client.go:66	NATS JetStream client initialized	{"host": "localhost", "port": 14227, "embedded": true}
-2025-09-26T11:39:00.228Z	INFO	nats/client.go:258	Stream created	{"stream": "test-stream"}
-2025-09-26T11:39:00.228Z	INFO	nats/client.go:136	NATS connection closed
-2025-09-26T11:39:00.228Z	WARN	nats/client.go:117	NATS connection disconnected
+2025-09-26T14:40:24.342Z	INFO	nats/embedded.go:152	Starting nats-server
+2025-09-26T14:40:24.342Z	INFO	nats/embedded.go:152	  Version:  2.9.21
+2025-09-26T14:40:24.342Z	INFO	nats/embedded.go:152	  Git:      [not set]
+2025-09-26T14:40:24.342Z	INFO	nats/embedded.go:152	  Name:     NC2JPB7Q2W3GZ5T7HDO2CT3PJITU3GXGDYP7IQ3WF65IFHTZ3EKL6WMN
+2025-09-26T14:40:24.342Z	INFO	nats/embedded.go:152	  Node:     Qe67ZS7M
+2025-09-26T14:40:24.342Z	INFO	nats/embedded.go:152	  ID:       NC2JPB7Q2W3GZ5T7HDO2CT3PJITU3GXGDYP7IQ3WF65IFHTZ3EKL6WMN
+2025-09-26T14:40:24.342Z	INFO	nats/embedded.go:152	Starting JetStream
+2025-09-26T14:40:24.343Z	INFO	nats/embedded.go:152	    _ ___ _____ ___ _____ ___ ___   _   __  __
+2025-09-26T14:40:24.343Z	INFO	nats/embedded.go:152	 _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
+2025-09-26T14:40:24.343Z	INFO	nats/embedded.go:152	| || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
+2025-09-26T14:40:24.343Z	INFO	nats/embedded.go:152	 \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
+2025-09-26T14:40:24.343Z	INFO	nats/embedded.go:152	
+2025-09-26T14:40:24.343Z	INFO	nats/embedded.go:152	         https://docs.nats.io/jetstream
+2025-09-26T14:40:24.343Z	INFO	nats/embedded.go:152	
+2025-09-26T14:40:24.343Z	INFO	nats/embedded.go:152	---------------- JETSTREAM ----------------
+2025-09-26T14:40:24.343Z	INFO	nats/embedded.go:152	  Max Memory:      256.00 MB
+2025-09-26T14:40:24.343Z	INFO	nats/embedded.go:152	  Max Storage:     512.00 MB
+2025-09-26T14:40:24.343Z	INFO	nats/embedded.go:152	  Store Directory: "/tmp/smts-nats/jetstream"
+2025-09-26T14:40:24.343Z	INFO	nats/embedded.go:152	-------------------------------------------
+2025-09-26T14:40:24.345Z	INFO	nats/embedded.go:152	Listening for client connections on localhost:14227
+2025-09-26T14:40:24.345Z	INFO	nats/embedded.go:152	Server is ready
+2025-09-26T14:40:29.373Z	INFO	nats/embedded.go:100	Embedded NATS server started	{"host": "localhost", "port": 14227, "store_dir": "/tmp/smts-nats"}
+2025-09-26T14:40:29.375Z	INFO	nats/client.go:50	Embedded NATS server started
+2025-09-26T14:40:29.383Z	INFO	nats/client.go:128	Connected to NATS server	{"url": "nats://localhost:14227"}
+2025-09-26T14:40:29.383Z	INFO	nats/client.go:66	NATS JetStream client initialized	{"host": "localhost", "port": 14227, "embedded": true}
+2025-09-26T14:40:29.388Z	INFO	nats/client.go:258	Stream created	{"stream": "test-stream"}
+2025-09-26T14:40:29.389Z	INFO	nats/client.go:136	NATS connection closed
+2025-09-26T14:40:29.389Z	INFO	nats/embedded.go:152	Initiating Shutdown...
+2025-09-26T14:40:29.389Z	INFO	nats/embedded.go:152	Initiating JetStream Shutdown...
+2025-09-26T14:40:29.389Z	INFO	nats/embedded.go:152	JetStream Shutdown
+2025-09-26T14:40:29.389Z	WARN	nats/client.go:117	NATS connection disconnected
 github.com/corporate/smts/internal/nats.(*Client).connect.func1
 	/app/internal/nats/client.go:117
 github.com/nats-io/nats%2ego.(*Conn).close.func1
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:5084
 github.com/nats-io/nats%2ego.(*asyncCallbacksHandler).asyncCBDispatcher
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:2857
-2025-09-26T11:39:00.229Z	INFO	nats/embedded.go:152	Initiating Shutdown...
-2025-09-26T11:39:00.229Z	ERROR	nats/client.go:125	NATS connection closed
+2025-09-26T14:40:29.389Z	ERROR	nats/client.go:125	NATS connection closed
 github.com/corporate/smts/internal/nats.(*Client).connect.func3
 	/app/internal/nats/client.go:125
 github.com/nats-io/nats%2ego.(*Conn).close.func3
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:5090
 github.com/nats-io/nats%2ego.(*asyncCallbacksHandler).asyncCBDispatcher
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:2857
-2025-09-26T11:39:00.229Z	INFO	nats/embedded.go:152	Initiating JetStream Shutdown...
-2025-09-26T11:39:00.229Z	INFO	nats/embedded.go:152	JetStream Shutdown
-2025-09-26T11:39:00.229Z	INFO	nats/embedded.go:152	Server Exiting..
-2025-09-26T11:39:00.229Z	INFO	nats/embedded.go:112	Embedded NATS server stopped
-2025-09-26T11:39:00.229Z	INFO	nats/client.go:141	Embedded NATS server stopped
+2025-09-26T14:40:29.389Z	INFO	nats/embedded.go:152	Server Exiting..
+2025-09-26T14:40:29.389Z	INFO	nats/embedded.go:112	Embedded NATS server stopped
+2025-09-26T14:40:29.389Z	INFO	nats/client.go:141	Embedded NATS server stopped
 --- PASS: TestClient_CreateStream (5.05s)
 === RUN   TestClient_DeleteStream
-2025-09-26T11:39:00.230Z	INFO	nats/embedded.go:152	Starting nats-server
-2025-09-26T11:39:00.230Z	INFO	nats/embedded.go:152	  Version:  2.9.21
-2025-09-26T11:39:00.230Z	INFO	nats/embedded.go:152	  Git:      [not set]
-2025-09-26T11:39:00.230Z	INFO	nats/embedded.go:152	  Name:     ND7ZZZGYXCMKHW3R22YCESWTPSWWK74E64YJ4Z6JDZEFKUNHK7H6XXH4
-2025-09-26T11:39:00.230Z	INFO	nats/embedded.go:152	  Node:     CeVYcnE4
-2025-09-26T11:39:00.231Z	INFO	nats/embedded.go:152	  ID:       ND7ZZZGYXCMKHW3R22YCESWTPSWWK74E64YJ4Z6JDZEFKUNHK7H6XXH4
-2025-09-26T11:39:00.231Z	INFO	nats/embedded.go:152	Starting JetStream
-2025-09-26T11:39:00.236Z	INFO	nats/embedded.go:152	    _ ___ _____ ___ _____ ___ ___   _   __  __
-2025-09-26T11:39:00.236Z	INFO	nats/embedded.go:152	 _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
-2025-09-26T11:39:00.236Z	INFO	nats/embedded.go:152	| || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
-2025-09-26T11:39:00.236Z	INFO	nats/embedded.go:152	 \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
-2025-09-26T11:39:00.236Z	INFO	nats/embedded.go:152	
-2025-09-26T11:39:00.236Z	INFO	nats/embedded.go:152	         https://docs.nats.io/jetstream
-2025-09-26T11:39:00.236Z	INFO	nats/embedded.go:152	
-2025-09-26T11:39:00.236Z	INFO	nats/embedded.go:152	---------------- JETSTREAM ----------------
-2025-09-26T11:39:00.236Z	INFO	nats/embedded.go:152	  Max Memory:      256.00 MB
-2025-09-26T11:39:00.236Z	INFO	nats/embedded.go:152	  Max Storage:     512.00 MB
-2025-09-26T11:39:00.236Z	INFO	nats/embedded.go:152	  Store Directory: "/tmp/smts-nats/jetstream"
-2025-09-26T11:39:00.236Z	INFO	nats/embedded.go:152	-------------------------------------------
-2025-09-26T11:39:00.241Z	INFO	nats/embedded.go:152	Listening for client connections on localhost:14228
-2025-09-26T11:39:00.241Z	INFO	nats/embedded.go:152	Server is ready
-2025-09-26T11:39:05.260Z	INFO	nats/embedded.go:100	Embedded NATS server started	{"host": "localhost", "port": 14228, "store_dir": "/tmp/smts-nats"}
-2025-09-26T11:39:05.260Z	INFO	nats/client.go:50	Embedded NATS server started
-2025-09-26T11:39:05.263Z	INFO	nats/client.go:128	Connected to NATS server	{"url": "nats://localhost:14228"}
-2025-09-26T11:39:05.263Z	INFO	nats/client.go:66	NATS JetStream client initialized	{"host": "localhost", "port": 14228, "embedded": true}
-2025-09-26T11:39:05.273Z	INFO	nats/client.go:258	Stream created	{"stream": "test-delete-stream"}
-2025-09-26T11:39:05.280Z	INFO	nats/client.go:288	Stream deleted	{"stream": "test-delete-stream"}
-2025-09-26T11:39:05.281Z	INFO	nats/client.go:136	NATS connection closed
-2025-09-26T11:39:05.281Z	INFO	nats/embedded.go:152	Initiating Shutdown...
-2025-09-26T11:39:05.281Z	INFO	nats/embedded.go:152	Initiating JetStream Shutdown...
-2025-09-26T11:39:05.281Z	INFO	nats/embedded.go:152	JetStream Shutdown
-2025-09-26T11:39:05.281Z	WARN	nats/client.go:117	NATS connection disconnected
+2025-09-26T14:40:29.390Z	INFO	nats/embedded.go:152	Starting nats-server
+2025-09-26T14:40:29.390Z	INFO	nats/embedded.go:152	  Version:  2.9.21
+2025-09-26T14:40:29.390Z	INFO	nats/embedded.go:152	  Git:      [not set]
+2025-09-26T14:40:29.390Z	INFO	nats/embedded.go:152	  Name:     NCTK2XTQK5YUZYJ7WCM5AFHLF63VXB5MHWHAQ5FTZNBOMAWMJUYLFYFW
+2025-09-26T14:40:29.390Z	INFO	nats/embedded.go:152	  Node:     TCgqonjx
+2025-09-26T14:40:29.390Z	INFO	nats/embedded.go:152	  ID:       NCTK2XTQK5YUZYJ7WCM5AFHLF63VXB5MHWHAQ5FTZNBOMAWMJUYLFYFW
+2025-09-26T14:40:29.391Z	INFO	nats/embedded.go:152	Starting JetStream
+2025-09-26T14:40:29.392Z	INFO	nats/embedded.go:152	    _ ___ _____ ___ _____ ___ ___   _   __  __
+2025-09-26T14:40:29.392Z	INFO	nats/embedded.go:152	 _ | | __|_   _/ __|_   _| _ \ __| /_\ |  \/  |
+2025-09-26T14:40:29.392Z	INFO	nats/embedded.go:152	| || | _|  | | \__ \ | | |   / _| / _ \| |\/| |
+2025-09-26T14:40:29.392Z	INFO	nats/embedded.go:152	 \__/|___| |_| |___/ |_| |_|_\___/_/ \_\_|  |_|
+2025-09-26T14:40:29.392Z	INFO	nats/embedded.go:152	
+2025-09-26T14:40:29.392Z	INFO	nats/embedded.go:152	         https://docs.nats.io/jetstream
+2025-09-26T14:40:29.392Z	INFO	nats/embedded.go:152	
+2025-09-26T14:40:29.392Z	INFO	nats/embedded.go:152	---------------- JETSTREAM ----------------
+2025-09-26T14:40:29.392Z	INFO	nats/embedded.go:152	  Max Memory:      256.00 MB
+2025-09-26T14:40:29.392Z	INFO	nats/embedded.go:152	  Max Storage:     512.00 MB
+2025-09-26T14:40:29.392Z	INFO	nats/embedded.go:152	  Store Directory: "/tmp/smts-nats/jetstream"
+2025-09-26T14:40:29.392Z	INFO	nats/embedded.go:152	-------------------------------------------
+2025-09-26T14:40:29.393Z	INFO	nats/embedded.go:152	Listening for client connections on localhost:14228
+2025-09-26T14:40:29.393Z	INFO	nats/embedded.go:152	Server is ready
+2025-09-26T14:40:34.422Z	INFO	nats/embedded.go:100	Embedded NATS server started	{"host": "localhost", "port": 14228, "store_dir": "/tmp/smts-nats"}
+2025-09-26T14:40:34.422Z	INFO	nats/client.go:50	Embedded NATS server started
+2025-09-26T14:40:34.425Z	INFO	nats/client.go:128	Connected to NATS server	{"url": "nats://localhost:14228"}
+2025-09-26T14:40:34.425Z	INFO	nats/client.go:66	NATS JetStream client initialized	{"host": "localhost", "port": 14228, "embedded": true}
+2025-09-26T14:40:34.434Z	INFO	nats/client.go:258	Stream created	{"stream": "test-delete-stream"}
+2025-09-26T14:40:34.437Z	INFO	nats/client.go:288	Stream deleted	{"stream": "test-delete-stream"}
+2025-09-26T14:40:34.438Z	WARN	nats/client.go:117	NATS connection disconnected
 github.com/corporate/smts/internal/nats.(*Client).connect.func1
 	/app/internal/nats/client.go:117
 github.com/nats-io/nats%2ego.(*Conn).close.func1
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:5084
 github.com/nats-io/nats%2ego.(*asyncCallbacksHandler).asyncCBDispatcher
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:2857
-2025-09-26T11:39:05.281Z	ERROR	nats/client.go:125	NATS connection closed
+2025-09-26T14:40:34.438Z	INFO	nats/client.go:136	NATS connection closed
+2025-09-26T14:40:34.438Z	ERROR	nats/client.go:125	NATS connection closed
 github.com/corporate/smts/internal/nats.(*Client).connect.func3
 	/app/internal/nats/client.go:125
 github.com/nats-io/nats%2ego.(*Conn).close.func3
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:5090
 github.com/nats-io/nats%2ego.(*asyncCallbacksHandler).asyncCBDispatcher
 	/go/pkg/mod/github.com/nats-io/nats.go@v1.28.0/nats.go:2857
-2025-09-26T11:39:05.282Z	INFO	nats/embedded.go:152	Server Exiting..
-2025-09-26T11:39:05.282Z	INFO	nats/embedded.go:112	Embedded NATS server stopped
-2025-09-26T11:39:05.282Z	INFO	nats/client.go:141	Embedded NATS server stopped
+2025-09-26T14:40:34.438Z	INFO	nats/embedded.go:152	Initiating Shutdown...
+2025-09-26T14:40:34.438Z	INFO	nats/embedded.go:152	Initiating JetStream Shutdown...
+2025-09-26T14:40:34.438Z	INFO	nats/embedded.go:152	JetStream Shutdown
+2025-09-26T14:40:34.439Z	INFO	nats/embedded.go:152	Server Exiting..
+2025-09-26T14:40:34.439Z	INFO	nats/embedded.go:112	Embedded NATS server stopped
+2025-09-26T14:40:34.439Z	INFO	nats/client.go:141	Embedded NATS server stopped
 --- PASS: TestClient_DeleteStream (5.05s)
 PASS
-ok  	github.com/corporate/smts/tests/unit/nats	33.384s
+ok  	github.com/corporate/smts/tests/unit/nats	33.371s

@@ -7,7 +7,7 @@ deployment:
 nats:
   embedded: true
   host: "localhost"
-  port: 14223  # Different port from EXT test
+  port: 14223  # Different port to avoid conflicts
   stream:
     name: "SMTS_INT_TEST"
     subjects: ["test.monterra.>", "test.pact_update.>"]
@@ -21,7 +21,7 @@ nats:
     deliver_policy: "all"
 
 api:
-  base_url: "http://localhost:18082"  # Different port from EXT test
+  base_url: "http://api-mock:1081"  # Test server will run here
   timeout: "10s"
   retry:
     max_attempts: 2
@@ -31,8 +31,8 @@ api:
     api_key: "test-api-key"
 
 dlp:
-  enabled: true
-  endpoint: "http://localhost:18082/validate"
+  enabled: false
+  endpoint: "http://dlp-mock:1080/validate"
   timeout: "5s"
   retry:
     max_attempts: 1
