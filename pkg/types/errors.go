@@ -114,9 +114,13 @@ const (
 func IsRetryableError(err error) bool {
 	if smtsErr, ok := err.(*SMTSError); ok {
 		switch smtsErr.Code {
-		case ErrAPIConnection, ErrAPIRequest, ErrAPIResponse, ErrDLPConnection, ErrDLPRequest,
+		case ErrAPIConnection, ErrAPIResponse, ErrDLPConnection,
 			ErrArtemisConnection, ErrNATSConnection, ErrResourceExhausted:
+			// Connection errors and server errors (5xx) are retryable
 			return true
+		case ErrAPIRequest, ErrDLPRequest:
+			// Client errors (4xx) are NOT retryable - they indicate permanent issues
+			return false
 		default:
 			return false
 		}

@@ -1,6 +1,7 @@
 package integration_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -54,10 +55,30 @@ func TestDocker_EXT_SMTS_Integration(t *testing.T) {
 		// Wait for message to be processed by the running EXT SMTS service
 		time.Sleep(3 * time.Second)
 
-		// Verify the message was processed by checking the stream
-		streamInfo, err := js.StreamInfo("SMTS_EXT_TEST")
-		require.NoError(t, err)
-		assert.Greater(t, streamInfo.State.Msgs, uint64(0), "Should have messages in stream")
+		// Verify the message was processed by checking MockServer received the specific request
+		retrieveRequest := map[string]interface{}{
+			"path": "/test.monterra.event",
+			"method": "POST",
+			"headers": map[string]interface{}{
+				"X-Smts-Message-Id": []string{"test-message-123"},
+			},
+		}
+		retrieveJSON, _ := json.Marshal(retrieveRequest)
+		
+		req, err := http.NewRequest("PUT", "http://api-mock:1081/retrieve", bytes.NewReader(retrieveJSON))
+		require.NoError(t, err, "Failed to create retrieve request")
+		req.Header.Set("Content-Type", "application/json")
+		
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err, "Failed to retrieve MockServer requests")
+		defer resp.Body.Close()
+		
+		var requests []map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&requests)
+		require.NoError(t, err, "Failed to decode retrieve response")
+		
+		// Verify our specific test message was received
+		assert.Greater(t, len(requests), 0, "MockServer should have received the test message")
 	})
 
 	// Test 2: Health check
@@ -91,10 +112,27 @@ func TestDocker_EXT_SMTS_Integration(t *testing.T) {
 		// Wait for processing
 		time.Sleep(5 * time.Second)
 
-		// Verify messages were processed
-		streamInfo, err := js.StreamInfo("SMTS_EXT_TEST")
-		require.NoError(t, err)
-		assert.GreaterOrEqual(t, streamInfo.State.Msgs, uint64(5), "Should have processed multiple messages")
+		// Verify messages were processed by checking MockServer received the requests
+		retrieveRequest := map[string]interface{}{
+			"path": "/test.monterra.event",
+			"method": "POST",
+		}
+		retrieveJSON, _ := json.Marshal(retrieveRequest)
+		
+		req, err := http.NewRequest("PUT", "http://api-mock:1081/retrieve", bytes.NewReader(retrieveJSON))
+		require.NoError(t, err, "Failed to create retrieve request")
+		req.Header.Set("Content-Type", "application/json")
+		
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err, "Failed to retrieve MockServer requests")
+		defer resp.Body.Close()
+		
+		var requests []map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&requests)
+		require.NoError(t, err, "Failed to decode retrieve response")
+		
+		// Verify multiple messages were received (at least 5 from this test)
+		assert.GreaterOrEqual(t, len(requests), 5, "MockServer should have received multiple test messages")
 	})
 }
 
@@ -137,10 +175,30 @@ func TestDocker_INT_SMTS_Integration(t *testing.T) {
 		// Wait for message to be processed by the running INT SMTS service
 		time.Sleep(3 * time.Second)
 
-		// Verify the message was processed by checking the stream
-		streamInfo, err := js.StreamInfo("SMTS_INT_TEST")
-		require.NoError(t, err)
-		assert.Greater(t, streamInfo.State.Msgs, uint64(0), "Should have messages in stream")
+		// Verify the message was processed by checking MockServer received the specific request
+		retrieveRequest := map[string]interface{}{
+			"path": "/test.monterra.event",
+			"method": "POST",
+			"headers": map[string]interface{}{
+				"X-Smts-Message-Id": []string{"test-message-123"},
+			},
+		}
+		retrieveJSON, _ := json.Marshal(retrieveRequest)
+		
+		req, err := http.NewRequest("PUT", "http://api-mock:1081/retrieve", bytes.NewReader(retrieveJSON))
+		require.NoError(t, err, "Failed to create retrieve request")
+		req.Header.Set("Content-Type", "application/json")
+		
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err, "Failed to retrieve MockServer requests")
+		defer resp.Body.Close()
+		
+		var requests []map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&requests)
+		require.NoError(t, err, "Failed to decode retrieve response")
+		
+		// Verify our specific test message was received
+		assert.Greater(t, len(requests), 0, "MockServer should have received the test message")
 	})
 
 	// Test 2: Health check
@@ -174,10 +232,27 @@ func TestDocker_INT_SMTS_Integration(t *testing.T) {
 		// Wait for processing
 		time.Sleep(5 * time.Second)
 
-		// Verify messages were processed
-		streamInfo, err := js.StreamInfo("SMTS_INT_TEST")
-		require.NoError(t, err)
-		assert.GreaterOrEqual(t, streamInfo.State.Msgs, uint64(5), "Should have processed multiple messages")
+		// Verify messages were processed by checking MockServer received the requests
+		retrieveRequest := map[string]interface{}{
+			"path": "/test.monterra.event",
+			"method": "POST",
+		}
+		retrieveJSON, _ := json.Marshal(retrieveRequest)
+		
+		req, err := http.NewRequest("PUT", "http://api-mock:1081/retrieve", bytes.NewReader(retrieveJSON))
+		require.NoError(t, err, "Failed to create retrieve request")
+		req.Header.Set("Content-Type", "application/json")
+		
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err, "Failed to retrieve MockServer requests")
+		defer resp.Body.Close()
+		
+		var requests []map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&requests)
+		require.NoError(t, err, "Failed to decode retrieve response")
+		
+		// Verify multiple messages were received (at least 5 from this test)
+		assert.GreaterOrEqual(t, len(requests), 5, "MockServer should have received multiple test messages")
 	})
 }
 
@@ -247,10 +322,30 @@ func TestDocker_MessageDelivery(t *testing.T) {
 		// Wait for delivery
 		time.Sleep(5 * time.Second)
 
-		// Verify message was processed
-		streamInfo, err := js.StreamInfo("SMTS_EXT_TEST")
-		require.NoError(t, err)
-		assert.Greater(t, streamInfo.State.Msgs, uint64(0), "Message should be processed")
+		// Verify message was processed by checking MockServer received the specific request
+		retrieveRequest := map[string]interface{}{
+			"path": "/test.monterra.event",
+			"method": "POST",
+			"headers": map[string]interface{}{
+				"X-Smts-Message-Id": []string{"docker-test-message-ext"},
+			},
+		}
+		retrieveJSON, _ := json.Marshal(retrieveRequest)
+		
+		req, err := http.NewRequest("PUT", "http://api-mock:1081/retrieve", bytes.NewReader(retrieveJSON))
+		require.NoError(t, err, "Failed to create retrieve request")
+		req.Header.Set("Content-Type", "application/json")
+		
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err, "Failed to retrieve MockServer requests")
+		defer resp.Body.Close()
+		
+		var requests []map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&requests)
+		require.NoError(t, err, "Failed to decode retrieve response")
+		
+		// Verify our specific test message was received
+		assert.Greater(t, len(requests), 0, "MockServer should have received the test message")
 	})
 
 	t.Run("INT_MessageDelivery", func(t *testing.T) {
@@ -280,9 +375,29 @@ func TestDocker_MessageDelivery(t *testing.T) {
 		// Wait for delivery (INT has DLP validation, might take longer)
 		time.Sleep(8 * time.Second)
 
-		// Verify message was processed
-		streamInfo, err := js.StreamInfo("SMTS_INT_TEST")
-		require.NoError(t, err)
-		assert.Greater(t, streamInfo.State.Msgs, uint64(0), "Message should be processed")
+		// Verify message was processed by checking MockServer received the specific request
+		retrieveRequest := map[string]interface{}{
+			"path": "/test.monterra.event",
+			"method": "POST",
+			"headers": map[string]interface{}{
+				"X-Smts-Message-Id": []string{"docker-test-message-int"},
+			},
+		}
+		retrieveJSON, _ := json.Marshal(retrieveRequest)
+		
+		req, err := http.NewRequest("PUT", "http://api-mock:1081/retrieve", bytes.NewReader(retrieveJSON))
+		require.NoError(t, err, "Failed to create retrieve request")
+		req.Header.Set("Content-Type", "application/json")
+		
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err, "Failed to retrieve MockServer requests")
+		defer resp.Body.Close()
+		
+		var requests []map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&requests)
+		require.NoError(t, err, "Failed to decode retrieve response")
+		
+		// Verify our specific test message was received
+		assert.Greater(t, len(requests), 0, "MockServer should have received the test message")
 	})
 }
