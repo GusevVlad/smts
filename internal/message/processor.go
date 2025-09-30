@@ -2,6 +2,7 @@ package message
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/corporate/smts/internal/api"
@@ -130,7 +131,7 @@ func (p *Processor) processINTMessage(ctx context.Context, msg *types.Message) (
 // ValidatePermissions checks if the message has permission to be processed
 func (p *Processor) ValidatePermissions(msg *types.Message) error {
 	// Check if topic is configured
-	_, exists := p.config.Topics.Topics[msg.Topic]
+	topicPermission, exists := p.config.Topics.Topics[msg.Topic]
 	if !exists {
 		return types.NewSMTSErrorWithDetails(
 			types.ErrPermissionDenied,
@@ -139,14 +140,66 @@ func (p *Processor) ValidatePermissions(msg *types.Message) error {
 		)
 	}
 
-	// For now, we'll assume all messages from NATS have read permission
-	// In a real implementation, you would check the source/role against the topic's read roles
-	
+	// Extract role from message source or headers
+	role := p.extractRoleFromMessage(msg)
+
+	// Check if the role has read permission for this topic
+	if !p.hasReadPermission(role, topicPermission) {
+		return types.NewSMTSErrorWithDetails(
+			types.ErrPermissionDenied,
+			"Role does not have read permission for topic",
+			fmt.Sprintf("role: %s, topic: %s", role, msg.Topic),
+		)
+	}
+
 	p.logger.Debug("Message permission validated",
 		zap.String("topic", msg.Topic),
-		zap.String("message_id", msg.ID))
+		zap.String("message_id", msg.ID),
+		zap.String("role", role))
 
 	return nil
+}
+
+// extractRoleFromMessage extracts the role from message headers or source
+func (p *Processor) extractRoleFromMessage(msg *types.Message) string {
+	// Check for role in headers first
+	if role, exists := msg.Headers["smts-role"]; exists {
+		return role
+	}
+
+	// Fallback to source-based role mapping
+	switch msg.Source {
+	case "ext_smts", "ext-publisher":
+		return "ext_reader"
+	case "int_smts", "int-publisher":
+		return "int_reader"
+	case "artemis":
+		return "int_reader"
+	case "smts-publisher":
+		// Determine role based on deployment type
+		if p.deployment == "ext" {
+			return "ext_reader"
+		} else {
+			return "int_reader"
+		}
+	default:
+		// Default to deployment-based role
+		if p.deployment == "ext" {
+			return "ext_reader"
+		} else {
+			return "int_reader"
+		}
+	}
+}
+
+// hasReadPermission checks if a role has read permission for a topic
+func (p *Processor) hasReadPermission(role string, topicPermission types.TopicPermission) bool {
+	for _, allowedRole := range topicPermission.ReadRoles {
+		if role == allowedRole {
+			return true
+		}
+	}
+	return false
 }
 
 // formatDLPReasons formats DLP rejection reasons for logging

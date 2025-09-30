@@ -2,31 +2,31 @@
 === RUN   TestDocker_EXT_SMTS_Integration/MessageFlow_EXT
 === RUN   TestDocker_EXT_SMTS_Integration/HealthCheck
 === RUN   TestDocker_EXT_SMTS_Integration/MultipleMessages
---- PASS: TestDocker_EXT_SMTS_Integration (8.31s)
-    --- PASS: TestDocker_EXT_SMTS_Integration/MessageFlow_EXT (3.23s)
-    --- PASS: TestDocker_EXT_SMTS_Integration/HealthCheck (0.00s)
-    --- PASS: TestDocker_EXT_SMTS_Integration/MultipleMessages (5.05s)
+--- PASS: TestDocker_EXT_SMTS_Integration (8.39s)
+    --- PASS: TestDocker_EXT_SMTS_Integration/MessageFlow_EXT (3.28s)
+    --- PASS: TestDocker_EXT_SMTS_Integration/HealthCheck (0.01s)
+    --- PASS: TestDocker_EXT_SMTS_Integration/MultipleMessages (5.07s)
 === RUN   TestDocker_INT_SMTS_Integration
 === RUN   TestDocker_INT_SMTS_Integration/MessageFlow_INT
 === RUN   TestDocker_INT_SMTS_Integration/HealthCheck
 === RUN   TestDocker_INT_SMTS_Integration/MultipleMessages
---- PASS: TestDocker_INT_SMTS_Integration (8.25s)
-    --- PASS: TestDocker_INT_SMTS_Integration/MessageFlow_INT (3.11s)
-    --- PASS: TestDocker_INT_SMTS_Integration/HealthCheck (0.01s)
-    --- PASS: TestDocker_INT_SMTS_Integration/MultipleMessages (5.11s)
+--- PASS: TestDocker_INT_SMTS_Integration (8.26s)
+    --- PASS: TestDocker_INT_SMTS_Integration/MessageFlow_INT (3.13s)
+    --- PASS: TestDocker_INT_SMTS_Integration/HealthCheck (0.02s)
+    --- PASS: TestDocker_INT_SMTS_Integration/MultipleMessages (5.10s)
 === RUN   TestDocker_MockServices
 === RUN   TestDocker_MockServices/APIMock_Accessible
 === RUN   TestDocker_MockServices/DLPMock_Accessible
 === RUN   TestDocker_MockServices/Artemis_Accessible
 --- PASS: TestDocker_MockServices (0.01s)
-    --- PASS: TestDocker_MockServices/APIMock_Accessible (0.00s)
+    --- PASS: TestDocker_MockServices/APIMock_Accessible (0.01s)
     --- PASS: TestDocker_MockServices/DLPMock_Accessible (0.00s)
     --- PASS: TestDocker_MockServices/Artemis_Accessible (0.00s)
 === RUN   TestDocker_MessageDelivery
 === RUN   TestDocker_MessageDelivery/EXT_MessageDelivery
 === RUN   TestDocker_MessageDelivery/INT_MessageDelivery
---- PASS: TestDocker_MessageDelivery (13.25s)
-    --- PASS: TestDocker_MessageDelivery/EXT_MessageDelivery (5.12s)
-    --- PASS: TestDocker_MessageDelivery/INT_MessageDelivery (8.14s)
+--- PASS: TestDocker_MessageDelivery (13.17s)
+    --- PASS: TestDocker_MessageDelivery/EXT_MessageDelivery (5.07s)
+    --- PASS: TestDocker_MessageDelivery/INT_MessageDelivery (8.10s)
 PASS
-ok  	github.com/corporate/smts/tests/integration	29.862s
+ok  	github.com/corporate/smts/tests/integration	29.849s

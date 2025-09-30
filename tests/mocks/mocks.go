@@ -293,9 +293,14 @@ func CreateTestConfig(deploymentType string) *types.Config {
 	// Configure test topics
 	config.Topics.Topics = map[string]types.TopicPermission{
 		"monterra.event": {
-			ReadRoles:   []string{"reader"},
-			WriteRoles:  []string{"writer"},
+			ReadRoles:   []string{"ext_reader", "int_reader"},
+			WriteRoles:  []string{"ext_writer", "int_writer"},
 			Description: "Test topic for monterra events",
+		},
+		"pact_update.event": {
+			ReadRoles:   []string{"ext_reader", "int_reader"},
+			WriteRoles:  []string{"ext_writer", "int_writer"},
+			Description: "Test topic for pact update events",
 		},
 	}
 	
