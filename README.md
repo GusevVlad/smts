@@ -6,12 +6,13 @@ A Golang service for secure message transport between isolated corporate network
 
 SMTS provides secure message transport between isolated corporate networks (EXT and INT) with the following features:
 
-- **Unified Codebase**: Single codebase for both EXT and INT deployments
 - **Embedded NATS JetStream**: Self-contained message broker
 - **JSON Raw Type**: Flexible message format with raw JSON body support
 - **DLP Validation**: Data Loss Prevention integration for INT network
 - **ArtemisMQ Integration**: Cross-network message flow via ArtemisMQ
 - **Configuration-Driven**: Behavior determined by YAML configuration files
+- **JSON raw**: type for flexible message content
+- **Unified Codebase**: Single codebase for both EXT and INT deployments
 
 ## Architecture
 
@@ -37,6 +38,121 @@ NATS JetStream (INT) → INT SMTS → DLP Validation (/validate) → Corporate A
 Corporate API Server → ArtemisMQ → INT SMTS → NATS JetStream (INT)
 ```
 
+## System Message Flow
+
+```mermaid
+flowchart TD
+    subgraph EXT Network
+        EXT_NATS[EXT NATS JetStream]
+        EXT_SMTS[EXT SMTS Service]
+    end
+
+    subgraph INT Network  
+        INT_NATS[INT NATS JetStream]
+        INT_SMTS[INT SMTS Service]
+        DLP[DLP Validation]
+    end
+
+    subgraph Corporate API
+        API[Corporate API Server]
+        ARTEMIS[ArtemisMQ]
+    end
+
+    %% EXT Network Flow
+    EXT_NATS --> EXT_SMTS
+    EXT_SMTS --> API
+
+    %% INT Network Flow
+    INT_NATS --> INT_SMTS
+    INT_SMTS --> DLP
+    DLP --> API
+
+    %% Cross-Network Flow
+    API --> ARTEMIS
+    ARTEMIS --> INT_SMTS
+    INT_SMTS --> INT_NATS
+```
+
+## Detailed EXT SMTS Flow
+
+```mermaid
+sequenceDiagram
+    participant C as EXT Client
+    participant N as EXT NATS
+    participant S as EXT SMTS
+    participant A as Corporate API
+
+    C->>N: Publish message to topic
+    N->>S: Consumer pulls message
+    S->>S: Validate topic permissions
+    S->>A: POST /topic_name with message
+    A->>S: 200 OK
+    S->>N: Acknowledge message
+```
+
+## Detailed INT SMTS Flow
+
+```mermaid
+sequenceDiagram
+    participant C as INT Client
+    participant N as INT NATS
+    participant S as INT SMTS
+    participant D as DLP Service
+    participant A as Corporate API
+    participant M as ArtemisMQ
+
+    C->>N: Publish message to topic
+    N->>S: Consumer pulls message
+    S->>S: Validate topic permissions
+    S->>D: POST /validate for DLP check
+    D->>S: Validation result
+    alt Validation Passed
+        S->>A: POST /topic_name with message
+        A->>S: 200 OK
+        S->>N: Acknowledge message
+    else Validation Failed
+        S->>S: Log rejection
+        S->>N: Acknowledge message (discard)
+    end
+
+    Note over A,M: Cross-network message flow
+    A->>M: Push message to ArtemisMQ
+    M->>S: INT SMTS consumes from Artemis
+    S->>N: Publish to INT NATS stream
+```
+
+## Error Handling Flow
+
+```mermaid
+flowchart TD
+    Start[Process Message] --> Validate{Validate Permissions}
+    Validate -->|Invalid| LogError[Log Permission Error]
+    Validate -->|Valid| Process
+    
+    subgraph Process
+        Direction{Network Type}
+        Direction -->|EXT| SendAPI[Send to Corporate API]
+        Direction -->|INT| DLPCheck[DLP Validation]
+        
+        DLPCheck -->|Passed| SendAPI
+        DLPCheck -->|Failed| LogDLPError[Log DLP Rejection]
+    end
+
+    SendAPI --> APIResult{API Response}
+    APIResult -->|Success| Ack[Acknowledge Message]
+    APIResult -->|Temporary Error| Retry[Retry with Backoff]
+    APIResult -->|Permanent Error| DeadLetter[Dead Letter Queue]
+    
+    Retry -->|Max Retries| DeadLetter
+    Retry -->|Success| Ack
+    
+    LogError --> Discard[Discard Message]
+    LogDLPError --> Discard
+    DeadLetter --> Finish[Finish Processing]
+    Ack --> Finish
+    Discard --> Finish
+```
+
 ## Quick Start
 
 ### Prerequisites
@@ -46,18 +162,14 @@ Corporate API Server → ArtemisMQ → INT SMTS → NATS JetStream (INT)
 
 ### Installation
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd smts
-```
+Запуск тестов (полный набор):
 
-2. Install dependencies:
 ```bash
-go mod download
+docker-compose -f docker-compose.test.yml build && docker-compose -f docker-compose.test.yml up -d
 ```
+Результаты в папке /docker-logs
 
-3. Build the applications:
+Build the applications:
 ```bash
 # Build EXT deployment
 go build -o bin/ext-smts ./cmd/ext-smts
@@ -78,11 +190,6 @@ export API_KEY=corporate_api_key_here
 export ARTEMIS_USER=artemis_username
 export ARTEMIS_PASSWORD=artemis_password
 
-# Optional overrides
-export NATS_HOST=localhost
-export NATS_PORT=4222
-export LOG_LEVEL=info
-```
 
 #### Configuration Files
 
@@ -113,7 +220,7 @@ export LOG_LEVEL=info
 
 ```yaml
 deployment:
-  type: "ext"  # or "int"
+  type: "int"  # or "ext"
   name: "smts-ext-prod"
   environment: "production"
 
@@ -135,6 +242,22 @@ api:
   auth:
     type: "api_key"
     api_key: "${API_KEY}"
+
+dlp: # int only
+  enabled: true
+  endpoint: "https://dlp.corporate.com/validate"
+  timeout: "10s"
+  retry:
+    max_attempts: 2
+    backoff: "1s"
+
+artemis:  # int only
+  enabled: true
+  host: "artemis"
+  port: 61613
+  queue: "SMTS_INT_QUEUE"
+  username: "${ARTEMIS_USER}"
+  password: "${ARTEMIS_PASSWORD}"
 ```
 
 ### Topics Configuration
@@ -160,7 +283,7 @@ roles:
 ```json
 {
   "id": "uuid-v4",
-  "timestamp": "2025-09-23T16:34:17Z",
+  "timestamp": "2025-09-29T16:34:17Z",
   "topic": "monterra.event",
   "source": "ext_smts",
   "headers": {
@@ -185,35 +308,7 @@ roles:
 - **Request Body**: Message content for validation
 - **Response**: Approval/Rejection with reasons
 
-## Health Monitoring
 
-### Health Endpoints
-
-- `GET /health` - Comprehensive health check
-- `GET /ready` - Readiness probe
-- `GET /live` - Liveness probe
-- `GET /metrics` - Metrics endpoint (future)
-
-### Health Check Response
-
-```json
-{
-  "status": "healthy",
-  "timestamp": "2025-09-23T16:34:17Z",
-  "uptime": "5m30s",
-  "version": "1.0.0",
-  "deployment": {
-    "type": "ext",
-    "name": "smts-ext-prod",
-    "environment": "production"
-  },
-  "checks": {
-    "process": {"status": "healthy", "details": "Process is running"},
-    "uptime": {"status": "healthy", "details": "5m30s", "seconds": 330},
-    "overall": {"status": "healthy", "details": "Overall system health"}
-  }
-}
-```
 
 ## Deployment
 
@@ -243,42 +338,6 @@ docker run -d \
   smts-int
 ```
 
-### Kubernetes Deployment
-
-See `deployments/k8s/` directory for Kubernetes manifests.
-
-## Monitoring and Logging
-
-### Logging
-
-- **Format**: Structured JSON logging
-- **Levels**: debug, info, warn, error
-- **Output**: stdout or file
-
-### Metrics
-
-- Prometheus metrics endpoint at `/metrics`
-- Custom metrics for message processing, errors, and performance
-
-## Troubleshooting
-
-### Common Issues
-
-1. **NATS Connection Failed**
-   - Check NATS server availability
-   - Verify host and port configuration
-   - Check firewall settings
-
-2. **API Authentication Failed**
-   - Verify API_KEY environment variable
-   - Check corporate API endpoint accessibility
-   - Validate API key permissions
-
-3. **DLP Validation Errors**
-   - Check DLP service availability
-   - Verify message format and content
-   - Review DLP policy configuration
-
 ### Debug Mode
 
 Enable debug logging for detailed troubleshooting:
@@ -289,32 +348,53 @@ logging:
   format: "console"  # Human-readable format for debugging
 ```
 
-## Development
+## Health Monitoring
 
-### Building from Source
+### Health Endpoints
+
+- `GET /health` - Comprehensive health check
+- `GET /ready` - Readiness probe
+- `GET /live` - Liveness probe
+- `GET /metrics` - Metrics endpoint (future)
+
+### Health Check Request
 
 ```bash
-# Build both deployments
-make build
+#!/bin/bash
+# health-check.sh
+URL="http://localhost:8080/health"
+response=$(curl -s -w "%{http_code}" $URL)
+http_code=$(tail -n1 <<< "$response")
+content=$(sed '$ d' <<< "$response")
 
-# Run tests
-make test
-
-# Run linting
-make lint
+if [ $http_code -eq 200 ]; then
+    echo "Health check PASSED"
+    exit 0
+else
+    echo "Health check FAILED: HTTP $http_code"
+    echo "$content"
+    exit 1
+fi
 ```
 
-### Testing
-
-```bash
-# Unit tests
-go test ./...
-
-# Integration tests
-go test -tags=integration ./...
-
-# End-to-end tests
-go test -tags=e2e ./...
+### Health Check Response
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-09-23T16:34:17Z",
+  "uptime": "5m30s",
+  "version": "1.0.0",
+  "deployment": {
+    "type": "ext",
+    "name": "smts-ext-prod",
+    "environment": "production"
+  },
+  "checks": {
+    "process": {"status": "healthy", "details": "Process is running"},
+    "uptime": {"status": "healthy", "details": "5m30s", "seconds": 330},
+    "overall": {"status": "healthy", "details": "Overall system health"}
+  }
+}
 ```
 
 ## Security Considerations

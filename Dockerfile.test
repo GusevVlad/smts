@@ -29,13 +29,6 @@ RUN echo '#!/bin/sh' > /app/bin/run-integration-tests.sh && \
     echo 'go test -v -timeout=15m ./tests/integration/... -run="TestDocker"' >> /app/bin/run-integration-tests.sh && \
     chmod +x /app/bin/run-integration-tests.sh
 
-RUN echo '#!/bin/sh' > /app/bin/run-ext-tests.sh && \
-    echo 'go test -v -timeout=15m ./tests/integration/... -run="TestEXT_SMTS"' >> /app/bin/run-ext-tests.sh && \
-    chmod +x /app/bin/run-ext-tests.sh
-
-RUN echo '#!/bin/sh' > /app/bin/run-int-tests.sh && \
-    echo 'go test -v -timeout=15m ./tests/integration/... -run="TestINT_SMTS"' >> /app/bin/run-int-tests.sh && \
-    chmod +x /app/bin/run-int-tests.sh
 
 # Runtime stage for tests
 FROM golang:1.25-alpine AS test-runner

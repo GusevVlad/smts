@@ -30,14 +30,6 @@ api:
     type: "api_key"
     api_key: "${API_KEY}"
 
-dlp:
-  enabled: false
-  endpoint: "https://dlp.corporate.com/validate"
-  timeout: "10s"
-  retry:
-    max_attempts: 2
-    backoff: "1s"
-
 logging:
   level: "info"
   format: "json"
