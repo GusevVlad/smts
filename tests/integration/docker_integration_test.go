@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/corporate/smts/pkg/types"
+	"smts/pkg/types"
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

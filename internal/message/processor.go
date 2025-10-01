@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/corporate/smts/internal/api"
-	"github.com/corporate/smts/internal/nats"
-	"github.com/corporate/smts/pkg/types"
-	"github.com/corporate/smts/pkg/utils"
+	"smts/internal/api"
+	"smts/internal/nats"
+	"smts/pkg/types"
+	"smts/pkg/utils"
 	"go.uber.org/zap"
 )
 

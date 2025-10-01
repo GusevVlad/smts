@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/corporate/smts/internal/message"
-	"github.com/corporate/smts/pkg/types"
-	"github.com/corporate/smts/tests/mocks"
+	"smts/internal/message"
+	"smts/pkg/types"
+	"smts/tests/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"

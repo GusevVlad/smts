@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/corporate/smts/pkg/types"
+	"smts/pkg/types"
 	"go.uber.org/zap"
 )
 

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/corporate/smts/pkg/types"
+	"smts/pkg/types"
 	"github.com/nats-io/nats-server/v2/server"
 	"go.uber.org/zap"
 )

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/corporate/smts/pkg/types"
+	"smts/pkg/types"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )

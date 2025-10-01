@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/corporate/smts/internal/server"
+	"smts/internal/server"
 )
 
 func main() {

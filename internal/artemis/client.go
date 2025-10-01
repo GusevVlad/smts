@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/corporate/smts/internal/message"
-	"github.com/corporate/smts/pkg/types"
-	"github.com/corporate/smts/pkg/utils"
+	"smts/internal/message"
+	"smts/pkg/types"
+	"smts/pkg/utils"
 	"github.com/go-stomp/stomp"
 	"go.uber.org/zap"
 )

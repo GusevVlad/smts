@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/corporate/smts/internal/config"
-	"github.com/corporate/smts/pkg/utils"
+	"smts/internal/config"
+	"smts/pkg/utils"
 )
 
 func main() {

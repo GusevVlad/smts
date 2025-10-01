@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/corporate/smts/pkg/types"
-	"github.com/corporate/smts/pkg/utils"
+	"smts/pkg/types"
+	"smts/pkg/utils"
 	"github.com/go-resty/resty/v2"
 	"go.uber.org/zap"
 )

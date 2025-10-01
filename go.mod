@@ -1,4 +1,4 @@
-module github.com/corporate/smts
+module smts
 
 go 1.25
 

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/corporate/smts/internal/api"
-	"github.com/corporate/smts/pkg/types"
+	"smts/internal/api"
+	"smts/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )

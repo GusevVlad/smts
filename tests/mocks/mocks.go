@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/corporate/smts/internal/message"
-	"github.com/corporate/smts/pkg/types"
+	"smts/internal/message"
+	"smts/pkg/types"
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"

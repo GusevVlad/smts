@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/corporate/smts/internal/server"
-	"github.com/corporate/smts/pkg/types"
+	"smts/internal/server"
+	"smts/pkg/types"
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -8,13 +8,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/corporate/smts/internal/api"
-	"github.com/corporate/smts/internal/artemis"
-	"github.com/corporate/smts/internal/config"
-	"github.com/corporate/smts/internal/message"
-	"github.com/corporate/smts/internal/nats"
-	"github.com/corporate/smts/pkg/types"
-	"github.com/corporate/smts/pkg/utils"
+	"smts/internal/api"
+	"smts/internal/artemis"
+	"smts/internal/config"
+	"smts/internal/message"
+	"smts/internal/nats"
+	"smts/pkg/types"
+	"smts/pkg/utils"
 	"go.uber.org/zap"
 )
 

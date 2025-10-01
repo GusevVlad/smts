@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/corporate/smts/internal/nats"
-	"github.com/corporate/smts/pkg/types"
+	"smts/internal/nats"
+	"smts/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
