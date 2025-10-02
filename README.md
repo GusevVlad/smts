@@ -21,105 +21,131 @@ SMTS provides secure message transport between isolated corporate networks (EXT 
 - **EXT SMTS**: Deployed in external corporate network
 - **INT SMTS**: Deployed in secured internal network
 
-### Message Flow
+### Message Flow Overview
 
-#### EXT Network:
-```
-NATS JetStream (EXT) → EXT SMTS → Corporate API Server (/topic_name)
+SMTS implements bidirectional message flows between EXT and INT networks with durable NATS queues and ArtemisMQ integration.
+
+## Flow 1: EXT → INT Message Flow
+
+**Path:** EXT Client → EXT-SMTS → Corporate API → ArtemisMQ → INT-SMTS → INT Client
+
+```mermaid
+sequenceDiagram
+    participant EC as EXT Client
+    participant ES as EXT-SMTS
+    participant EN as EXT NATS (Embedded)
+    participant CA as Corporate API Server
+    participant AM as ArtemisMQ
+    participant IS as INT-SMTS
+    participant IN as INT NATS (Embedded)
+    participant IC as INT Client
+
+    Note over EC,IC: EXT → INT Flow
+    EC->>ES: POST /send/{topic_name}
+    ES->>EN: Place in output queue (grouped by topic)
+    EN->>ES: FIFO message delivery
+    ES->>CA: POST /topic_name (FIFO order)
+    CA->>AM: Push to ArtemisMQ queue
+    AM->>IS: INT-SMTS pulls from ArtemisMQ
+    IS->>IN: Collect in input queue (grouped by topic)
+    IC->>IS: GET /receive/{topic_name}?count=n
+    IS->>IC: Return messages
+    IC->>IS: POST /confirm/{topic_name} (confirm receipt)
+    IS->>IN: Delete confirmed messages from NATS
 ```
 
-#### INT Network:
-```
-NATS JetStream (INT) → INT SMTS → DLP Validation (/validate) → Corporate API Server (/topic_name)
+## Flow 2: INT → EXT Message Flow
+
+**Path:** INT Client → INT-SMTS → DLP → ArtemisMQ → Corporate API → EXT-SMTS → EXT Client
+
+```mermaid
+sequenceDiagram
+    participant IC as INT Client
+    participant IS as INT-SMTS
+    participant IN as INT NATS (Embedded)
+    participant DL as DLP Server
+    participant AM as ArtemisMQ
+    participant CA as Corporate API Server
+    participant ES as EXT-SMTS
+    participant EN as EXT NATS (Embedded)
+    participant EC as EXT Client
+
+    Note over IC,EC: INT → EXT Flow
+    IC->>IS: POST /send/{topic_name}
+    IS->>IN: Place in output queue (grouped by topic)
+    IN->>IS: FIFO message delivery
+    IS->>DL: Send to DLP for risk check
+    alt DLP Approved
+        IS->>AM: Push to ArtemisMQ via STOMP
+        AM->>CA: Corporate API consumes (FIFO)
+        CA->>ES: POST /corp_message/{topic_name}
+        ES->>EN: Store in input queue (grouped by topic)
+        EC->>ES: GET /receive/{topic_name}?count=n
+        ES->>EC: Return messages
+        EC->>ES: POST /confirm/{topic_name} (confirm receipt)
+        ES->>EN: Delete confirmed messages from NATS
+    else DLP Rejected
+        IS->>IS: Log rejection in incidents.log
+    end
 ```
 
-#### Cross-Network Flow:
-```
-Corporate API Server → ArtemisMQ → INT SMTS → NATS JetStream (INT)
-```
-
-## System Message Flow
+## System Architecture Overview
 
 ```mermaid
 flowchart TD
     subgraph EXT Network
-        EXT_NATS[EXT NATS JetStream]
-        EXT_SMTS[EXT SMTS Service]
+        EC[EXT Client]
+        ES[EXT-SMTS Server]
+        EN[EXT NATS<br/>Embedded]
     end
 
-    subgraph INT Network  
-        INT_NATS[INT NATS JetStream]
-        INT_SMTS[INT SMTS Service]
-        DLP[DLP Validation]
+    subgraph INT Network
+        IC[INT Client]
+        IS[INT-SMTS Server]
+        IN[INT NATS<br/>Embedded]
+        DL[DLP Server]
     end
 
-    subgraph Corporate API
-        API[Corporate API Server]
-        ARTEMIS[ArtemisMQ]
+    subgraph Corporate Infrastructure
+        CA[Corporate API Server]
+        AM[ArtemisMQ]
     end
 
-    %% EXT Network Flow
-    EXT_NATS --> EXT_SMTS
-    EXT_SMTS --> API
+    %% Flow 1: EXT → INT
+    EC -->|POST /send/{topic}| ES
+    ES -->|Output Queue| EN
+    EN -->|FIFO| ES
+    ES -->|POST /topic_name| CA
+    CA -->|Push| AM
+    AM -->|Pull| IS
+    IS -->|Input Queue| IN
+    IC -->|GET /receive/{topic}| IS
+    IC -->|POST /confirm/{topic}| IS
+    IS -->|Delete| IN
 
-    %% INT Network Flow
-    INT_NATS --> INT_SMTS
-    INT_SMTS --> DLP
-    DLP --> API
-
-    %% Cross-Network Flow
-    API --> ARTEMIS
-    ARTEMIS --> INT_SMTS
-    INT_SMTS --> INT_NATS
+    %% Flow 2: INT → EXT
+    IC -->|POST /send/{topic}| IS
+    IS -->|Output Queue| IN
+    IN -->|FIFO| IS
+    IS -->|DLP Check| DL
+    DL -->|Approved/Rejected| IS
+    IS -->|STOMP Push| AM
+    AM -->|FIFO| CA
+    CA -->|POST /corp_message/{topic}| ES
+    ES -->|Input Queue| EN
+    EC -->|GET /receive/{topic}| ES
+    EC -->|POST /confirm/{topic}| ES
+    ES -->|Delete| EN
 ```
 
-## Detailed EXT SMTS Flow
+## Key Features
 
-```mermaid
-sequenceDiagram
-    participant C as EXT Client
-    participant N as EXT NATS
-    participant S as EXT SMTS
-    participant A as Corporate API
-
-    C->>N: Publish message to topic
-    N->>S: Consumer pulls message
-    S->>S: Validate topic permissions
-    S->>A: POST /topic_name with message
-    A->>S: 200 OK
-    S->>N: Acknowledge message
-```
-
-## Detailed INT SMTS Flow
-
-```mermaid
-sequenceDiagram
-    participant C as INT Client
-    participant N as INT NATS
-    participant S as INT SMTS
-    participant D as DLP Service
-    participant A as Corporate API
-    participant M as ArtemisMQ
-
-    C->>N: Publish message to topic
-    N->>S: Consumer pulls message
-    S->>S: Validate topic permissions
-    S->>D: POST /validate for DLP check
-    D->>S: Validation result
-    alt Validation Passed
-        S->>A: POST /topic_name with message
-        A->>S: 200 OK
-        S->>N: Acknowledge message
-    else Validation Failed
-        S->>S: Log rejection
-        S->>N: Acknowledge message (discard)
-    end
-
-    Note over A,M: Cross-network message flow
-    A->>M: Push message to ArtemisMQ
-    M->>S: INT SMTS consumes from Artemis
-    S->>N: Publish to INT NATS stream
-```
+- **Durable NATS Queues**: All NATS queues are durable with workqueue retention
+- **FIFO Processing**: Messages processed in strict first-in-first-out order
+- **Topic-Based Grouping**: Messages grouped by topic names in both input/output queues
+- **DLP Integration**: Risk-based validation for INT → EXT flow
+- **Confirmation Mechanism**: Clients confirm receipt before message deletion
+- **Bidirectional Flow**: Full support for both EXT→INT and INT→EXT message flows
 
 ## Error Handling Flow
 
@@ -130,12 +156,13 @@ flowchart TD
     Validate -->|Valid| Process
     
     subgraph Process
-        Direction{Network Type}
-        Direction -->|EXT| SendAPI[Send to Corporate API]
-        Direction -->|INT| DLPCheck[DLP Validation]
+        Direction{Flow Direction}
+        Direction -->|EXT→INT| SendAPI[Send to Corporate API]
+        Direction -->|INT→EXT| DLPCheck[DLP Validation]
         
-        DLPCheck -->|Passed| SendAPI
-        DLPCheck -->|Failed| LogDLPError[Log DLP Rejection]
+        DLPCheck -->|Approved| SendArtemis[Push to ArtemisMQ]
+        DLPCheck -->|Rejected| LogDLPError[Log to incidents.log]
+        SendArtemis --> SendAPI
     end
 
     SendAPI --> APIResult{API Response}
@@ -296,9 +323,28 @@ roles:
 
 ## API Integration
 
-### Corporate API Endpoints
+### Client-Facing SMTS Endpoints
 
-#### POST /topic_name
+#### POST /send/{topic_name}
+- **Description**: Send message to specified topic
+- **Authentication**: API Key (X-API-Key header)
+- **Request Body**: Message data in JSON format
+- **Response**: 200 OK with message ID on success
+
+#### GET /receive/{topic_name}?count=n
+- **Description**: Retrieve up to n messages from specified topic
+- **Authentication**: API Key (X-API-Key header)
+- **Response**: Array of messages with metadata
+
+#### POST /confirm/{topic_name}
+- **Description**: Confirm receipt and deletion of messages
+- **Authentication**: API Key (X-API-Key header)
+- **Request Body**: Array of message IDs to confirm
+- **Response**: 200 OK on successful deletion
+
+### Internal Integration Endpoints
+
+#### POST /topic_name (Corporate API)
 - **Authentication**: API Key (X-API-Key header)
 - **Request Body**: Raw message data
 - **Response**: 200 OK on success
@@ -307,6 +353,11 @@ roles:
 - **Authentication**: API Key (X-API-Key header)
 - **Request Body**: Message content for validation
 - **Response**: Approval/Rejection with reasons
+
+#### POST /corp_message/{topic_name} (Corporate API → EXT-SMTS)
+- **Authentication**: API Key (X-API-Key header)
+- **Request Body**: Message data from corporate network
+- **Response**: 200 OK on successful storage
 
 
 

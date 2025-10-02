@@ -204,6 +204,9 @@ services:
         condition: service_started
     ports:
       - "14222:14222"  # NATS server port for testing
+      - "18091:18081"  # Health server port for testing
+      - "18092:18082"  # HTTP server port for testing
+      - "19081:19081"  # Message API port for testing
     environment:
       - CONFIG_FILE=/app/tests/configs/ext-test-config.yaml
     command: >
@@ -232,6 +235,9 @@ services:
         condition: service_started
     ports:
       - "14223:14223"  # NATS server port for testing
+      - "18093:18083"  # Health server port for testing
+      - "18094:18084"  # HTTP server port for testing
+      - "19083:19083"  # Message API port for testing
     environment:
       - CONFIG_FILE=/app/tests/configs/int-test-config.yaml
     command: >

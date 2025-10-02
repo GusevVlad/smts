@@ -2,9 +2,13 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,15 +24,18 @@ import (
 
 // Server represents the main SMTS server
 type Server struct {
-	config        *types.Config
-	logger        *zap.Logger
-	natsClient    *nats.Client
-	apiClient     *api.Client
-	artemisClient *artemis.Client
-	processor     *message.Processor
-	consumer      *nats.Consumer
-	healthServer  *HealthServer
-	running       bool
+	config          *types.Config
+	logger          *zap.Logger
+	natsClient      *nats.Client
+	apiClient       *api.Client
+	artemisClient   *artemis.Client
+	processor       *message.Processor
+	consumer        *nats.Consumer
+	healthServer    *HealthServer
+	messageAPIServer *MessageAPIServer
+	publisher       *nats.Publisher
+	httpServer      *http.Server
+	running         bool
 }
 
 // NewServer creates a new SMTS server
@@ -95,18 +102,27 @@ func NewServer(configPath string) (*Server, error) {
 	// Create NATS consumer
 	consumer := nats.NewConsumer(natsClient, cfg.NATS.Stream.Name, &cfg.NATS.Consumer, processor, logger)
 
+	// Create NATS publisher
+	publisher := nats.NewPublisher(natsClient, logger)
+
 	// Create health server
 	healthServer := NewHealthServer(cfg, logger)
 
+	// Create message API server
+	messageAPIServer := NewMessageAPIServer(cfg, logger)
+	messageAPIServer.SetNATSClient(natsClient)
+
 	server := &Server{
-		config:        cfg,
-		logger:        logger,
-		natsClient:    natsClient,
-		apiClient:     apiClient,
-		artemisClient: artemisClient,
-		processor:     processor,
-		consumer:      consumer,
-		healthServer:  healthServer,
+		config:          cfg,
+		logger:          logger,
+		natsClient:      natsClient,
+		apiClient:       apiClient,
+		artemisClient:   artemisClient,
+		processor:       processor,
+		consumer:        consumer,
+		publisher:       publisher,
+		healthServer:    healthServer,
+		messageAPIServer: messageAPIServer,
 	}
 
 	return server, nil
@@ -123,9 +139,19 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to create NATS stream: %w", err)
 	}
 
+	// Start HTTP server for message publishing
+	if err := s.startHTTPServer(); err != nil {
+		return fmt.Errorf("failed to start HTTP server: %w", err)
+	}
+
 	// Start health server
 	if err := s.healthServer.Start(); err != nil {
 		return fmt.Errorf("failed to start health server: %w", err)
+	}
+
+	// Start message API server
+	if err := s.messageAPIServer.Start(); err != nil {
+		return fmt.Errorf("failed to start message API server: %w", err)
 	}
 
 	// Start NATS consumer
@@ -168,6 +194,22 @@ func (s *Server) Stop() error {
 	if s.consumer != nil {
 		if err := s.consumer.Stop(); err != nil {
 			s.logger.Error("Error stopping NATS consumer", zap.Error(err))
+		}
+	}
+
+	// Stop HTTP server
+	if s.httpServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.httpServer.Shutdown(ctx); err != nil {
+			s.logger.Error("Error stopping HTTP server", zap.Error(err))
+		}
+	}
+
+	// Stop message API server
+	if s.messageAPIServer != nil {
+		if err := s.messageAPIServer.Stop(); err != nil {
+			s.logger.Error("Error stopping message API server", zap.Error(err))
 		}
 	}
 
@@ -248,6 +290,163 @@ func (s *Server) GetConfig() *types.Config {
 // GetLogger returns the server logger
 func (s *Server) GetLogger() *zap.Logger {
 	return s.logger
+}
+
+// startHTTPServer starts the HTTP server for message publishing
+func (s *Server) startHTTPServer() error {
+	mux := http.NewServeMux()
+	
+	// Add message handler for all topics (topic is extracted from URL path)
+	mux.HandleFunc("/", s.messageHandler)
+	
+	// Use a different port for HTTP server (health port + 1)
+	port := s.config.Health.Port + 1
+	
+	s.httpServer = &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: mux,
+	}
+	
+	go func() {
+		s.logger.Info("Starting HTTP server for message publishing",
+			zap.Int("port", port))
+		
+		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			s.logger.Error("HTTP server failed", zap.Error(err))
+		}
+	}()
+	
+	// Wait a moment for server to start
+	time.Sleep(100 * time.Millisecond)
+	
+	return nil
+}
+
+// messageHandler handles incoming HTTP messages and publishes them to NATS
+func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract topic from URL path
+	topic := r.URL.Path[1:] // Remove leading slash
+	if topic == "" {
+		http.Error(w, `{"error": "Topic is required in URL path"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Check authorization headers
+	apiKey := r.Header.Get("X-API-Key")
+	role := r.Header.Get("smts-role")
+	messageID := r.Header.Get("X-SMTS-Message-ID")
+	timestamp := r.Header.Get("X-SMTS-Timestamp")
+	source := r.Header.Get("X-SMTS-Source")
+
+	// Validate required headers
+	if apiKey == "" {
+		http.Error(w, `{"error": "X-API-Key header is required"}`, http.StatusUnauthorized)
+		return
+	}
+
+	if role == "" {
+		http.Error(w, `{"error": "smts-role header is required"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Check if topic exists in configuration (basic validation)
+	if _, exists := s.config.Topics.Topics[topic]; !exists {
+		s.logger.Warn("Topic not found in configuration",
+			zap.String("topic", topic),
+			zap.String("role", role))
+		http.Error(w, `{"error": "Topic not found in configuration"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Read message body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		s.logger.Error("Failed to read request body", zap.Error(err))
+		http.Error(w, `{"error": "Failed to read request body"}`, http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	// Parse timestamp
+	var msgTimestamp time.Time
+	if timestamp != "" {
+		msgTimestamp, err = time.Parse(time.RFC3339, timestamp)
+		if err != nil {
+			s.logger.Warn("Invalid timestamp format, using current time",
+				zap.String("timestamp", timestamp),
+				zap.Error(err))
+			msgTimestamp = time.Now().UTC()
+		}
+	} else {
+		msgTimestamp = time.Now().UTC()
+	}
+
+	// Generate message ID if not provided
+	if messageID == "" {
+		messageID = nats.GenerateID()
+	}
+
+	// Set default source if not provided
+	if source == "" {
+		source = "http-client"
+	}
+
+	// Create message headers
+	headers := make(map[string]string)
+	for key, values := range r.Header {
+		if len(values) > 0 && strings.HasPrefix(strings.ToLower(key), "x-smts-") {
+			headers[key] = values[0]
+		}
+	}
+
+	// Add additional headers
+	headers["X-SMTS-API-Key"] = apiKey
+	headers["X-SMTS-Role"] = role
+	headers["X-SMTS-Source"] = source
+
+	// Create message
+	msg := &types.Message{
+		ID:        messageID,
+		Timestamp: msgTimestamp,
+		Topic:     topic,
+		Source:    source,
+		Headers:   headers,
+		Body:      body,
+	}
+
+	// Publish message to NATS
+	if err := s.publisher.PublishMessage(msg); err != nil {
+		s.logger.Error("Failed to publish message",
+			zap.String("topic", topic),
+			zap.String("message_id", messageID),
+			zap.Error(err))
+		http.Error(w, `{"error": "Failed to publish message to stream"}`, http.StatusInternalServerError)
+		return
+	}
+
+	s.logger.Info("Message published successfully",
+		zap.String("topic", topic),
+		zap.String("message_id", messageID),
+		zap.String("source", source),
+		zap.String("role", role))
+
+	// Return success response
+	response := map[string]interface{}{
+		"status":     "delivered",
+		"message_id": messageID,
+		"topic":      topic,
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		"deployment": s.config.Deployment.Type,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
 }
 
 // Run starts the server and waits for shutdown
