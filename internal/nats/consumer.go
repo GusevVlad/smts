@@ -219,18 +219,22 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 
 // startPullConsumer starts a pull consumer that fetches messages manually
 func (c *Consumer) startPullConsumer(ctx context.Context) error {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ticker.C:
-			// Fetch messages from the pull subscription
-			msgs, err := c.subscription.Fetch(10, nats.MaxWait(5*time.Second))
-			if err != nil && err != nats.ErrTimeout {
+		default:
+			// Fetch messages from the pull subscription with a longer timeout
+			msgs, err := c.subscription.Fetch(10, nats.MaxWait(30*time.Second))
+			if err != nil {
+				if err == nats.ErrTimeout {
+					// No messages available, continue without logging
+					continue
+				}
+				// Log only actual errors, not timeouts
 				c.logger.Error("Failed to fetch messages", zap.Error(err))
+				// Wait before retrying on error
+				time.Sleep(5 * time.Second)
 				continue
 			}
 

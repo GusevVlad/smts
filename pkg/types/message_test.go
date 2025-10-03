@@ -212,47 +212,10 @@ func TestDLPValidationResponse(t *testing.T) {
 
 func TestTopicPermission(t *testing.T) {
 	permission := &TopicPermission{
-		ReadRoles:   []string{"reader"},
-		WriteRoles:  []string{"writer"},
 		Description: "Test topic",
-	}
-
-	// Topic name is now the map key, not a field in the struct
-	// This test should validate the permission fields instead
-
-	if len(permission.ReadRoles) != 1 || permission.ReadRoles[0] != "reader" {
-		t.Errorf("Expected read roles ['reader'], got %v", permission.ReadRoles)
-	}
-
-	if len(permission.WriteRoles) != 1 || permission.WriteRoles[0] != "writer" {
-		t.Errorf("Expected write roles ['writer'], got %v", permission.WriteRoles)
 	}
 
 	if permission.Description != "Test topic" {
 		t.Errorf("Expected description 'Test topic', got %s", permission.Description)
-	}
-}
-
-func TestRoleDefinition(t *testing.T) {
-	role := &RoleDefinition{
-		Name:        "test_role",
-		Description: "Test role",
-		Topics:      []string{"topic1", "topic2"},
-	}
-
-	if role.Name != "test_role" {
-		t.Errorf("Expected name 'test_role', got %s", role.Name)
-	}
-
-	if role.Description != "Test role" {
-		t.Errorf("Expected description 'Test role', got %s", role.Description)
-	}
-
-	if len(role.Topics) != 2 {
-		t.Errorf("Expected 2 topics, got %d", len(role.Topics))
-	}
-
-	if role.Topics[0] != "topic1" || role.Topics[1] != "topic2" {
-		t.Errorf("Expected topics ['topic1', 'topic2'], got %v", role.Topics)
 	}
 }

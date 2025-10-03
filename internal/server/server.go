@@ -30,7 +30,8 @@ type Server struct {
 	apiClient       *api.Client
 	artemisClient   *artemis.Client
 	processor       *message.Processor
-	consumer        *nats.Consumer
+	clientConsumer  *nats.Consumer
+	externalConsumer *nats.Consumer
 	healthServer    *HealthServer
 	messageAPIServer *MessageAPIServer
 	publisher       *nats.Publisher
@@ -67,7 +68,7 @@ func NewServer(configPath string) (*Server, error) {
 	}
 
 	// Load topics configuration only if not already defined in main config
-	if len(cfg.Topics.Topics) == 0 && len(cfg.Topics.Roles) == 0 {
+	if len(cfg.Topics.Topics) == 0 {
 		topicsConfig, err := configLoader.LoadTopicsConfig("", cfg.Deployment.Type)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load topics configuration: %w", err)
@@ -85,10 +86,7 @@ func NewServer(configPath string) (*Server, error) {
 	}
 
 	// Create API client
-	apiClient := api.NewClient(&cfg.API, logger)
-
-	// Create message processor
-	processor := message.NewProcessor(cfg, apiClient, natsClient, logger)
+	apiClient := api.NewClient(&cfg.API, &cfg.DLP, logger)
 
 	// Create Artemis client for INT deployment
 	var artemisClient *artemis.Client
@@ -99,11 +97,17 @@ func NewServer(configPath string) (*Server, error) {
 		}
 	}
 
-	// Create NATS consumer
-	consumer := nats.NewConsumer(natsClient, cfg.NATS.Stream.Name, &cfg.NATS.Consumer, processor, logger)
-
 	// Create NATS publisher
 	publisher := nats.NewPublisher(natsClient, logger)
+
+	// Create message processor
+	processor := message.NewProcessor(cfg, apiClient, natsClient, publisher, artemisClient, logger)
+
+	// Create NATS consumer for client messages
+	clientConsumer := nats.NewConsumer(natsClient, cfg.NATS.ClientStream.Name, &cfg.NATS.ClientConsumer, processor, logger)
+
+	// Create NATS consumer for external messages (for message API only - no processing)
+	externalConsumer := nats.NewConsumer(natsClient, cfg.NATS.ExternalStream.Name, &cfg.NATS.ExternalConsumer, nil, logger)
 
 	// Create health server
 	healthServer := NewHealthServer(cfg, logger)
@@ -119,7 +123,8 @@ func NewServer(configPath string) (*Server, error) {
 		apiClient:       apiClient,
 		artemisClient:   artemisClient,
 		processor:       processor,
-		consumer:        consumer,
+		clientConsumer:  clientConsumer,
+		externalConsumer: externalConsumer,
 		publisher:       publisher,
 		healthServer:    healthServer,
 		messageAPIServer: messageAPIServer,
@@ -134,9 +139,12 @@ func (s *Server) Start() error {
 		zap.String("deployment", s.config.Deployment.Type),
 		zap.String("environment", s.config.Deployment.Environment))
 
-	// Create stream if it doesn't exist
-	if err := s.natsClient.CreateStream(&s.config.NATS.Stream); err != nil {
-		return fmt.Errorf("failed to create NATS stream: %w", err)
+	// Create streams if they don't exist
+	if err := s.natsClient.CreateStream(&s.config.NATS.ClientStream); err != nil {
+		return fmt.Errorf("failed to create NATS client stream: %w", err)
+	}
+	if err := s.natsClient.CreateStream(&s.config.NATS.ExternalStream); err != nil {
+		return fmt.Errorf("failed to create NATS external stream: %w", err)
 	}
 
 	// Start HTTP server for message publishing
@@ -154,10 +162,16 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to start message API server: %w", err)
 	}
 
-	// Start NATS consumer
+	// Start NATS consumer for client messages
 	ctx := context.Background()
-	if err := s.consumer.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start NATS consumer: %w", err)
+	if err := s.clientConsumer.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start NATS client consumer: %w", err)
+	}
+
+	// Create external consumer without starting processing loop
+	// This ensures the consumer exists for message API to read from
+	if err := s.createExternalConsumer(); err != nil {
+		return fmt.Errorf("failed to create external consumer: %w", err)
 	}
 
 	// Start Artemis consumer for INT deployment
@@ -190,10 +204,15 @@ func (s *Server) Stop() error {
 		}
 	}
 
-	// Stop NATS consumer
-	if s.consumer != nil {
-		if err := s.consumer.Stop(); err != nil {
-			s.logger.Error("Error stopping NATS consumer", zap.Error(err))
+	// Stop NATS consumers
+	if s.clientConsumer != nil {
+		if err := s.clientConsumer.Stop(); err != nil {
+			s.logger.Error("Error stopping NATS client consumer", zap.Error(err))
+		}
+	}
+	if s.externalConsumer != nil {
+		if err := s.externalConsumer.Stop(); err != nil {
+			s.logger.Error("Error stopping NATS external consumer", zap.Error(err))
 		}
 	}
 
@@ -296,8 +315,11 @@ func (s *Server) GetLogger() *zap.Logger {
 func (s *Server) startHTTPServer() error {
 	mux := http.NewServeMux()
 	
-	// Add message handler for all topics (topic is extracted from URL path)
-	mux.HandleFunc("/", s.messageHandler)
+	// Add message handler for /send/{topic} endpoint (Flow 1: EXT → INT)
+	mux.HandleFunc("/send/", s.messageHandler)
+	
+	// Add corporate message handler for /corp_message/{topic} endpoint (Flow 2: INT → EXT)
+	mux.HandleFunc("/corp_message/", s.corporateMessageHandler)
 	
 	// Use a different port for HTTP server (health port + 1)
 	port := s.config.Health.Port + 1
@@ -329,8 +351,13 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract topic from URL path
-	topic := r.URL.Path[1:] // Remove leading slash
+	// Extract topic from URL path (remove "/send/" prefix)
+	if !strings.HasPrefix(r.URL.Path, "/send/") {
+		http.Error(w, `{"error": "Invalid endpoint"}`, http.StatusNotFound)
+		return
+	}
+	
+	topic := strings.TrimPrefix(r.URL.Path, "/send/")
 	if topic == "" {
 		http.Error(w, `{"error": "Topic is required in URL path"}`, http.StatusBadRequest)
 		return
@@ -338,7 +365,6 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Check authorization headers
 	apiKey := r.Header.Get("X-API-Key")
-	role := r.Header.Get("smts-role")
 	messageID := r.Header.Get("X-SMTS-Message-ID")
 	timestamp := r.Header.Get("X-SMTS-Timestamp")
 	source := r.Header.Get("X-SMTS-Source")
@@ -349,16 +375,11 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if role == "" {
-		http.Error(w, `{"error": "smts-role header is required"}`, http.StatusUnauthorized)
-		return
-	}
 
 	// Check if topic exists in configuration (basic validation)
 	if _, exists := s.config.Topics.Topics[topic]; !exists {
 		s.logger.Warn("Topic not found in configuration",
-			zap.String("topic", topic),
-			zap.String("role", role))
+			zap.String("topic", topic))
 		http.Error(w, `{"error": "Topic not found in configuration"}`, http.StatusBadRequest)
 		return
 	}
@@ -406,7 +427,6 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Add additional headers
 	headers["X-SMTS-API-Key"] = apiKey
-	headers["X-SMTS-Role"] = role
 	headers["X-SMTS-Source"] = source
 
 	// Create message
@@ -432,8 +452,7 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("Message published successfully",
 		zap.String("topic", topic),
 		zap.String("message_id", messageID),
-		zap.String("source", source),
-		zap.String("role", role))
+		zap.String("source", source))
 
 	// Return success response
 	response := map[string]interface{}{
@@ -442,6 +461,133 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 		"topic":      topic,
 		"timestamp":  time.Now().UTC().Format(time.RFC3339),
 		"deployment": s.config.Deployment.Type,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+// corporateMessageHandler handles incoming corporate messages from corporate API (Flow 2: INT → EXT)
+func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract topic from URL path (remove "/corp_message/" prefix)
+	if !strings.HasPrefix(r.URL.Path, "/corp_message/") {
+		http.Error(w, `{"error": "Invalid endpoint"}`, http.StatusNotFound)
+		return
+	}
+	
+	topic := strings.TrimPrefix(r.URL.Path, "/corp_message/")
+	if topic == "" {
+		http.Error(w, `{"error": "Topic is required in URL path"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Check authorization headers
+	apiKey := r.Header.Get("X-API-Key")
+	messageID := r.Header.Get("X-SMTS-Message-ID")
+	timestamp := r.Header.Get("X-SMTS-Timestamp")
+	source := r.Header.Get("X-SMTS-Source")
+
+	// Validate required headers
+	if apiKey == "" {
+		http.Error(w, `{"error": "X-API-Key header is required"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Check if topic exists in configuration (basic validation)
+	if _, exists := s.config.Topics.Topics[topic]; !exists {
+		s.logger.Warn("Topic not found in configuration",
+			zap.String("topic", topic))
+		http.Error(w, `{"error": "Topic not found in configuration"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Read message body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		s.logger.Error("Failed to read request body", zap.Error(err))
+		http.Error(w, `{"error": "Failed to read request body"}`, http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	// Parse timestamp
+	var msgTimestamp time.Time
+	if timestamp != "" {
+		msgTimestamp, err = time.Parse(time.RFC3339, timestamp)
+		if err != nil {
+			s.logger.Warn("Invalid timestamp format, using current time",
+				zap.String("timestamp", timestamp),
+				zap.Error(err))
+			msgTimestamp = time.Now().UTC()
+		}
+	} else {
+		msgTimestamp = time.Now().UTC()
+	}
+
+	// Generate message ID if not provided
+	if messageID == "" {
+		messageID = nats.GenerateID()
+	}
+
+	// Set default source if not provided
+	if source == "" {
+		source = "corporate-api"
+	}
+
+	// Create message headers
+	headers := make(map[string]string)
+	for key, values := range r.Header {
+		if len(values) > 0 && strings.HasPrefix(strings.ToLower(key), "x-smts-") {
+			headers[key] = values[0]
+		}
+	}
+
+	// Add additional headers
+	headers["X-SMTS-API-Key"] = apiKey
+	headers["X-SMTS-Source"] = source
+
+	// For corporate messages (Flow 2), publish directly to external stream
+	// This avoids the client consumer processing loop and makes messages available for external clients
+	externalMsg := &types.Message{
+		ID:        messageID,
+		Timestamp: msgTimestamp,
+		Topic:     "external." + topic,  // Use external subject pattern
+		Source:    source,
+		Headers:   headers,
+		Body:      body,
+	}
+	
+	// Publish message directly to external stream
+	if err := s.publisher.PublishMessageToStream(externalMsg, s.config.NATS.ExternalStream.Name); err != nil {
+		s.logger.Error("Failed to publish corporate message to external stream",
+			zap.String("topic", topic),
+			zap.String("message_id", messageID),
+			zap.Error(err))
+		http.Error(w, `{"error": "Failed to publish message to external stream"}`, http.StatusInternalServerError)
+		return
+	}
+
+	s.logger.Info("Corporate message published successfully to external stream",
+		zap.String("topic", topic),
+		zap.String("message_id", messageID),
+		zap.String("source", source),
+		zap.String("external_topic", externalMsg.Topic),
+		zap.String("stream", s.config.NATS.ExternalStream.Name))
+
+	// Return success response
+	response := map[string]interface{}{
+		"status":     "delivered",
+		"message_id": messageID,
+		"topic":      topic,
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		"deployment": s.config.Deployment.Type,
+		"flow":       "int_to_ext",
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -497,5 +643,31 @@ func QuickHealthCheck(configPath string) error {
 	}
 
 	logger.Info("Quick health check passed")
+	return nil
+}
+
+// createExternalConsumer creates the external consumer without starting the processing loop
+func (s *Server) createExternalConsumer() error {
+	if s.externalConsumer == nil {
+		return nil
+	}
+
+	// Start the external consumer briefly to create it, then stop it immediately
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := s.externalConsumer.Start(ctx); err != nil {
+		return fmt.Errorf("failed to create external consumer: %w", err)
+	}
+
+	// Stop the consumer immediately to avoid processing loop
+	if err := s.externalConsumer.Stop(); err != nil {
+		s.logger.Warn("Failed to stop external consumer after creation", zap.Error(err))
+	}
+
+	s.logger.Info("External consumer created for message API",
+		zap.String("stream", s.config.NATS.ExternalStream.Name),
+		zap.String("consumer", s.config.NATS.ExternalConsumer.DurableName))
+
 	return nil
 }

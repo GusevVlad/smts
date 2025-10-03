@@ -8,20 +8,33 @@ nats:
   embedded: true
   host: "0.0.0.0"  # Bind to all interfaces for Docker compatibility
   port: 14223  # Different port to avoid conflicts
-  stream:
-    name: "SMTS_INT_TEST"
+  # Client stream for messages from local clients (Flow 2)
+  client_stream:
+    name: "SMTS_INT_CLIENT"
     subjects: ["test.monterra.>", "test.pact_update.>"]
     retention: "workqueue"
     max_age: "1h"
     storage: "memory"  # Use memory for faster tests
     replicas: 1
-  consumer:
-    durable_name: "SMTS_INT_TEST_CONSUMER"
+  client_consumer:
+    durable_name: "SMTS_INT_CLIENT_CONSUMER"
+    ack_policy: "explicit"
+    deliver_policy: "all"
+  # External stream for messages from different network instances (Flow 1)
+  external_stream:
+    name: "SMTS_INT_EXTERNAL"
+    subjects: ["external.test.monterra.>", "external.test.pact_update.>"]
+    retention: "workqueue"
+    max_age: "1h"
+    storage: "memory"
+    replicas: 1
+  external_consumer:
+    durable_name: "SMTS_INT_EXTERNAL_CONSUMER"
     ack_policy: "explicit"
     deliver_policy: "all"
 
 api:
-  base_url: "http://api-mock:1081"  # Test server will run here
+  base_url: "http://corporate-api:8080"  # Corporate API service
   timeout: "10s"
   retry:
     max_attempts: 2
@@ -42,7 +55,8 @@ artemis:
   enabled: true
   host: "artemis-test"
   port: 61613  # Different port from EXT test
-  queue: "SMTS_INT_TEST_QUEUE"
+  queue: "SMTS_INT_TEST_QUEUE"  # Consume from Flow 1 queue
+  publish_queue: "SMTS_EXT_TEST_QUEUE"  # Publish to Flow 2 queue
   username: "artemis"
   password: "artemis"
 
@@ -59,20 +73,7 @@ health:
 # Test topics configuration
 topics:
   test.monterra.event:
-    read_roles: ["int_reader"]
-    write_roles: ["int_writer"]
     description: "Test monterra events"
   
   test.pact_update.event:
-    read_roles: ["int_reader"]
-    write_roles: ["int_writer"]
     description: "Test pact update events"
-
-roles:
-  int_reader:
-    description: "INT network message reader"
-    topics: ["test.monterra.event", "test.pact_update.event"]
-  
-  int_writer:
-    description: "INT network message writer"
-    topics: ["test.monterra.event", "test.pact_update.event"]

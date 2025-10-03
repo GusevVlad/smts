@@ -2,7 +2,7 @@ package message
 
 import (
 	"context"
-	"fmt"
+	"strings"
 	"time"
 
 	"smts/internal/api"
@@ -12,23 +12,32 @@ import (
 	"go.uber.org/zap"
 )
 
+// ArtemisPublisher defines the interface for publishing messages to ArtemisMQ
+type ArtemisPublisher interface {
+	PublishMessage(msg *types.Message) error
+}
+
 // Processor handles message processing for SMTS
 type Processor struct {
-	config      *types.Config
-	apiClient   api.APIClient
-	natsClient  nats.NATSClient
-	logger      *zap.Logger
-	deployment  string
+	config          *types.Config
+	apiClient       api.APIClient
+	natsClient      nats.NATSClient
+	natsPublisher   *nats.Publisher
+	artemisPublisher ArtemisPublisher
+	logger          *zap.Logger
+	deployment      string
 }
 
 // NewProcessor creates a new message processor
-func NewProcessor(config *types.Config, apiClient api.APIClient, natsClient nats.NATSClient, logger *zap.Logger) *Processor {
+func NewProcessor(config *types.Config, apiClient api.APIClient, natsClient nats.NATSClient, natsPublisher *nats.Publisher, artemisPublisher ArtemisPublisher, logger *zap.Logger) *Processor {
 	return &Processor{
-		config:     config,
-		apiClient:  apiClient,
-		natsClient: natsClient,
-		logger:     logger,
-		deployment: config.Deployment.Type,
+		config:          config,
+		apiClient:       apiClient,
+		natsClient:      natsClient,
+		natsPublisher:   natsPublisher,
+		artemisPublisher: artemisPublisher,
+		logger:          logger,
+		deployment:      config.Deployment.Type,
 	}
 }
 
@@ -37,29 +46,64 @@ func (p *Processor) HandleMessage(ctx context.Context, msg *types.Message) (*typ
 	operation := "process_message"
 	startTime := time.Now()
 
-	// Validate message permissions
-	if err := p.ValidatePermissions(msg); err != nil {
-		p.logger.Warn("Message permission validation failed",
-			append(utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic),
-				utils.WithError(err))...)
+	// Skip topic validation for external topics (they use external.* pattern)
+	if !strings.HasPrefix(msg.Topic, "external.") {
+		// Validate topic configuration for non-external topics
+		if err := p.ValidateTopic(msg.Topic); err != nil {
+			p.logger.Warn("Topic validation failed",
+				append(utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic),
+					utils.WithError(err))...)
 
-		return &types.DeliveryResult{
-			Success:    false,
-			MessageID:  msg.ID,
-			Timestamp:  time.Now().UTC(),
-			Error:      err.Error(),
-		}, err
+			return &types.DeliveryResult{
+				Success:    false,
+				MessageID:  msg.ID,
+				Timestamp:  time.Now().UTC(),
+				Error:      err.Error(),
+			}, err
+		}
 	}
 
-	// Process based on deployment type
+	// Process based on deployment type and source
 	var result *types.DeliveryResult
 	var err error
 
 	switch p.deployment {
 	case "ext":
-		result, err = p.processEXTMessage(ctx, msg)
+		// For EXT deployment, check if message is from corporate API (Flow 2)
+		isFromCorporateAPI := msg.Source == "corporate-api" || msg.Headers["smts-source"] == "corporate-api" || msg.Headers["X-SMTS-Source"] == "corporate-api"
+		
+		p.logger.Debug("EXT message source detection",
+			zap.String("message_id", msg.ID),
+			zap.String("source", msg.Source),
+			zap.String("smts-source", msg.Headers["smts-source"]),
+			zap.String("x-smts-source", msg.Headers["X-SMTS-Source"]),
+			zap.Bool("is_from_corporate_api", isFromCorporateAPI))
+		
+		if isFromCorporateAPI {
+			// Flow 2: Message from corporate API (via ArtemisMQ) - store in external NATS stream for external clients
+			result, err = p.processEXTMessageFromCorporateAPI(ctx, msg)
+		} else {
+			// Flow 1: Message from NATS (external client) - deliver to corporate API
+			result, err = p.processEXTMessage(ctx, msg)
+		}
 	case "int":
-		result, err = p.processINTMessage(ctx, msg)
+		// For INT deployment, check if message is from ArtemisMQ (Flow 1)
+		isFromArtemis := msg.Source == "artemis" || msg.Headers["smts-source"] == "artemis" || msg.Headers["X-SMTS-Source"] == "artemis"
+		
+		p.logger.Debug("INT message source detection",
+			zap.String("message_id", msg.ID),
+			zap.String("source", msg.Source),
+			zap.String("smts-source", msg.Headers["smts-source"]),
+			zap.String("x-smts-source", msg.Headers["X-SMTS-Source"]),
+			zap.Bool("is_from_artemis", isFromArtemis))
+		
+		if isFromArtemis {
+			// Flow 1: Message from ArtemisMQ (via corporate API) - store in NATS for internal clients
+			result, err = p.processINTMessageFromArtemis(ctx, msg)
+		} else {
+			// Flow 2: Message from NATS (internal client) - publish to ArtemisMQ
+			result, err = p.processINTMessageToArtemis(ctx, msg)
+		}
 	default:
 		err = types.NewSMTSError(types.ErrMessageRouting,
 			"Unknown deployment type: "+p.deployment)
@@ -98,9 +142,9 @@ func (p *Processor) processEXTMessage(ctx context.Context, msg *types.Message) (
 	return p.apiClient.DeliverMessage(ctx, msg)
 }
 
-// processINTMessage processes messages for INT deployment (with DLP validation)
-func (p *Processor) processINTMessage(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error) {
-	// INT deployment: DLP validation followed by delivery
+// processINTMessageToArtemis processes messages for INT deployment that need to go to ArtemisMQ (Flow 2)
+func (p *Processor) processINTMessageToArtemis(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error) {
+	// INT deployment: DLP validation followed by delivery to ArtemisMQ
 	
 	// Step 1: DLP validation
 	if p.config.DLP.Enabled {
@@ -124,82 +168,126 @@ func (p *Processor) processINTMessage(ctx context.Context, msg *types.Message) (
 		}
 	}
 
-	// Step 2: Deliver to corporate API
+	// Step 2: For INT deployment, publish to ArtemisMQ instead of direct delivery
+	// This enables Flow 2: INT → ArtemisMQ → Corporate API → EXT
+	if p.artemisPublisher != nil {
+		if err := p.artemisPublisher.PublishMessage(msg); err != nil {
+			return &types.DeliveryResult{
+				Success:    false,
+				MessageID:  msg.ID,
+				Timestamp:  time.Now().UTC(),
+				Error:      err.Error(),
+			}, err
+		}
+		
+		p.logger.Info("Message published to ArtemisMQ",
+			zap.String("message_id", msg.ID),
+			zap.String("topic", msg.Topic),
+			zap.String("queue", p.config.Artemis.Queue))
+		
+		return &types.DeliveryResult{
+			Success:   true,
+			MessageID: msg.ID,
+			Timestamp: time.Now().UTC(),
+		}, nil
+	}
+	
+	// Fallback: If Artemis publisher is not available, use API client
 	return p.apiClient.DeliverMessage(ctx, msg)
 }
 
-// ValidatePermissions checks if the message has permission to be processed
-func (p *Processor) ValidatePermissions(msg *types.Message) error {
+// processEXTMessageFromCorporateAPI processes messages for EXT deployment that come from corporate API (Flow 2)
+func (p *Processor) processEXTMessageFromCorporateAPI(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error) {
+	// Flow 2: Message from corporate API (via ArtemisMQ) - store in external NATS stream for external clients
+	
+	// Create a copy of the message with the correct subject for external stream
+	externalMsg := &types.Message{
+		ID:        msg.ID,
+		Timestamp: msg.Timestamp,
+		Topic:     "external." + msg.Topic,  // Use external subject pattern
+		Source:    msg.Source,
+		Headers:   msg.Headers,
+		Body:      msg.Body,
+	}
+	
+	// Store message in external NATS stream for external clients to consume via REST API
+	if err := p.natsPublisher.PublishMessageToStream(externalMsg, p.config.NATS.ExternalStream.Name); err != nil {
+		return &types.DeliveryResult{
+			Success:    false,
+			MessageID:  msg.ID,
+			Timestamp:  time.Now().UTC(),
+			Error:      err.Error(),
+		}, err
+	}
+	
+	p.logger.Info("Message stored in external NATS stream from corporate API",
+		zap.String("message_id", msg.ID),
+		zap.String("topic", msg.Topic),
+		zap.String("external_topic", externalMsg.Topic),
+		zap.String("source", msg.Source),
+		zap.String("stream", p.config.NATS.ExternalStream.Name))
+	
+	return &types.DeliveryResult{
+		Success:   true,
+		MessageID: msg.ID,
+		Timestamp: time.Now().UTC(),
+	}, nil
+}
+
+// processINTMessageFromArtemis processes messages for INT deployment that come from ArtemisMQ (Flow 1)
+func (p *Processor) processINTMessageFromArtemis(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error) {
+	// Flow 1: Message from ArtemisMQ (via corporate API) - store in external NATS stream for internal clients
+	
+	// Create a copy of the message with the correct subject for external stream
+	externalMsg := &types.Message{
+		ID:        msg.ID,
+		Timestamp: msg.Timestamp,
+		Topic:     "external." + msg.Topic,  // Use external subject pattern
+		Source:    msg.Source,
+		Headers:   msg.Headers,
+		Body:      msg.Body,
+	}
+	
+	// Store message in external NATS stream for internal clients to consume via REST API
+	if err := p.natsPublisher.PublishMessageToStream(externalMsg, p.config.NATS.ExternalStream.Name); err != nil {
+		return &types.DeliveryResult{
+			Success:    false,
+			MessageID:  msg.ID,
+			Timestamp:  time.Now().UTC(),
+			Error:      err.Error(),
+		}, err
+	}
+	
+	p.logger.Info("Message stored in external NATS stream from ArtemisMQ",
+		zap.String("message_id", msg.ID),
+		zap.String("topic", msg.Topic),
+		zap.String("external_topic", externalMsg.Topic),
+		zap.String("source", msg.Source),
+		zap.String("stream", p.config.NATS.ExternalStream.Name))
+	
+	return &types.DeliveryResult{
+		Success:   true,
+		MessageID: msg.ID,
+		Timestamp: time.Now().UTC(),
+	}, nil
+}
+
+// ValidateTopic checks if the topic is configured
+func (p *Processor) ValidateTopic(topic string) error {
 	// Check if topic is configured
-	topicPermission, exists := p.config.Topics.Topics[msg.Topic]
+	_, exists := p.config.Topics.Topics[topic]
 	if !exists {
 		return types.NewSMTSErrorWithDetails(
 			types.ErrPermissionDenied,
 			"Topic not configured",
-			"topic: "+msg.Topic,
+			"topic: "+topic,
 		)
 	}
 
-	// Extract role from message source or headers
-	role := p.extractRoleFromMessage(msg)
-
-	// Check if the role has read permission for this topic
-	if !p.hasReadPermission(role, topicPermission) {
-		return types.NewSMTSErrorWithDetails(
-			types.ErrPermissionDenied,
-			"Role does not have read permission for topic",
-			fmt.Sprintf("role: %s, topic: %s", role, msg.Topic),
-		)
-	}
-
-	p.logger.Debug("Message permission validated",
-		zap.String("topic", msg.Topic),
-		zap.String("message_id", msg.ID),
-		zap.String("role", role))
+	p.logger.Debug("Topic validated",
+		zap.String("topic", topic))
 
 	return nil
-}
-
-// extractRoleFromMessage extracts the role from message headers or source
-func (p *Processor) extractRoleFromMessage(msg *types.Message) string {
-	// Check for role in headers first
-	if role, exists := msg.Headers["smts-role"]; exists {
-		return role
-	}
-
-	// Fallback to source-based role mapping
-	switch msg.Source {
-	case "ext_smts", "ext-publisher":
-		return "ext_reader"
-	case "int_smts", "int-publisher":
-		return "int_reader"
-	case "artemis":
-		return "int_reader"
-	case "smts-publisher":
-		// Determine role based on deployment type
-		if p.deployment == "ext" {
-			return "ext_reader"
-		} else {
-			return "int_reader"
-		}
-	default:
-		// Default to deployment-based role
-		if p.deployment == "ext" {
-			return "ext_reader"
-		} else {
-			return "int_reader"
-		}
-	}
-}
-
-// hasReadPermission checks if a role has read permission for a topic
-func (p *Processor) hasReadPermission(role string, topicPermission types.TopicPermission) bool {
-	for _, allowedRole := range topicPermission.ReadRoles {
-		if role == allowedRole {
-			return true
-		}
-	}
-	return false
 }
 
 // formatDLPReasons formats DLP rejection reasons for logging

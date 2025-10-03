@@ -52,14 +52,12 @@ type DLPValidationResponse struct {
 	Error     string   `json:"error,omitempty"`
 }
 
-// TopicPermission represents access control for topics
+// TopicPermission represents topic configuration
 type TopicPermission struct {
-	ReadRoles   []string `mapstructure:"read_roles" json:"read_roles"`
-	WriteRoles  []string `mapstructure:"write_roles" json:"write_roles"`
-	Description string   `mapstructure:"description" json:"description"`
+	Description string `mapstructure:"description" json:"description"`
 }
 
-// RoleDefinition represents a role with associated topic permissions
+// RoleDefinition is deprecated and kept for backward compatibility
 type RoleDefinition struct {
 	Name        string   `mapstructure:"name" json:"name"`
 	Description string   `mapstructure:"description" json:"description"`

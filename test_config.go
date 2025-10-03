@@ -45,7 +45,6 @@ func main() {
 		} else {
 			fmt.Printf("  Config loaded successfully: %s\n", cfg.Deployment.Type)
 			fmt.Printf("  Topics count: %d\n", len(cfg.Topics.Topics))
-			fmt.Printf("  Roles count: %d\n", len(cfg.Topics.Roles))
 		}
 		fmt.Println()
 	}

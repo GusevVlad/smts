@@ -38,7 +38,7 @@ func TestAPIClient_DeliverMessage_Success(t *testing.T) {
 		},
 	}
 
-	client := api.NewClient(config, logger)
+	client := api.NewClient(config, &types.DLPConfig{Enabled: false}, logger)
 
 	// Create a test message
 	messageBody := map[string]interface{}{
@@ -88,7 +88,7 @@ func TestAPIClient_DeliverMessage_RetrySuccess(t *testing.T) {
 		},
 	}
 
-	client := api.NewClient(config, logger)
+	client := api.NewClient(config, &types.DLPConfig{Enabled: false}, logger)
 
 	msg := &types.Message{
 		ID:        "test-message-123",
@@ -122,7 +122,7 @@ func TestAPIClient_DeliverMessage_ClientError(t *testing.T) {
 		},
 	}
 
-	client := api.NewClient(config, logger)
+	client := api.NewClient(config, &types.DLPConfig{Enabled: false}, logger)
 
 	msg := &types.Message{
 		ID:        "test-message-123",
@@ -168,7 +168,7 @@ func TestAPIClient_ValidateMessage_Success(t *testing.T) {
 		Timeout: 30 * time.Second,
 	}
 
-	client := api.NewClient(config, logger)
+	client := api.NewClient(config, &types.DLPConfig{Enabled: false}, logger)
 
 	msg := &types.Message{
 		ID:        "test-message-123",
@@ -205,7 +205,7 @@ func TestAPIClient_ValidateMessage_Rejected(t *testing.T) {
 		Timeout: 30 * time.Second,
 	}
 
-	client := api.NewClient(config, logger)
+	client := api.NewClient(config, &types.DLPConfig{Enabled: false}, logger)
 
 	msg := &types.Message{
 		ID:        "test-message-123",
@@ -236,7 +236,7 @@ func TestAPIClient_HealthCheck_Success(t *testing.T) {
 		Timeout: 30 * time.Second,
 	}
 
-	client := api.NewClient(config, logger)
+	client := api.NewClient(config, &types.DLPConfig{Enabled: false}, logger)
 
 	err := client.HealthCheck(context.Background())
 	assert.NoError(t, err)
@@ -255,7 +255,7 @@ func TestAPIClient_HealthCheck_Failure(t *testing.T) {
 		Timeout: 30 * time.Second,
 	}
 
-	client := api.NewClient(config, logger)
+	client := api.NewClient(config, &types.DLPConfig{Enabled: false}, logger)
 
 	err := client.HealthCheck(context.Background())
 	assert.Error(t, err)
@@ -269,7 +269,7 @@ func TestAPIClient_MessageValidation(t *testing.T) {
 		Timeout: 30 * time.Second,
 	}
 
-	client := api.NewClient(config, logger)
+	client := api.NewClient(config, &types.DLPConfig{Enabled: false}, logger)
 
 	tests := []struct {
 		name        string
@@ -373,7 +373,7 @@ func TestAPIClient_Authentication(t *testing.T) {
 	t.Logf("Test server URL: %s", server.URL)
 	t.Logf("Config BaseURL: %s", config.BaseURL)
 
-	client := api.NewClient(config, logger)
+	client := api.NewClient(config, &types.DLPConfig{Enabled: false}, logger)
 
 	msg := &types.Message{
 		ID:        "test-message-123",

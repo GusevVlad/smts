@@ -1,0 +1,278 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/go-stomp/stomp"
+)
+
+type CorporateAPI struct {
+	stompConn *stomp.Conn
+	extSMTSURL string
+	artemisURL string
+	queueName  string
+	flow2QueueName string
+}
+
+type Message struct {
+	ID        string            `json:"id"`
+	Timestamp string            `json:"timestamp"`
+	Topic     string            `json:"topic"`
+	Source    string            `json:"source"`
+	Headers   map[string]string `json:"headers"`
+	Body      json.RawMessage   `json:"body"`
+}
+
+func NewCorporateAPI(artemisURL, extSMTSURL, queueName string) (*CorporateAPI, error) {
+	// Connect to ArtemisMQ
+	conn, err := stomp.Dial("tcp", artemisURL,
+		stomp.ConnOpt.Login("artemis", "artemis"),
+		stomp.ConnOpt.HeartBeat(0, 0))
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to ArtemisMQ: %w", err)
+	}
+
+	return &CorporateAPI{
+		stompConn:      conn,
+		extSMTSURL:     extSMTSURL,
+		artemisURL:     artemisURL,
+		queueName:      queueName,
+		flow2QueueName: "SMTS_EXT_TEST_QUEUE", // Different queue for Flow 2
+	}, nil
+}
+
+// HandleRoot handles all incoming requests and routes them appropriately
+func (api *CorporateAPI) HandleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/health" {
+		api.HealthCheck(w, r)
+		return
+	}
+	
+	// Handle topic-specific endpoints for Flow 1
+	if r.Method == http.MethodPost && r.URL.Path != "/" {
+		api.HandleMessageFromEXT(w, r)
+		return
+	}
+	
+	// Default response for other requests
+	http.Error(w, "Not found", http.StatusNotFound)
+}
+
+// HandleMessageFromEXT handles messages from EXT-SMTS (Flow 1)
+func (api *CorporateAPI) HandleMessageFromEXT(w http.ResponseWriter, r *http.Request) {
+	topic := r.URL.Path[1:] // Remove leading slash
+
+	// Read message body
+	var body json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Invalid JSON: %v"}`, err), http.StatusBadRequest)
+		return
+	}
+
+	// Extract SMTS headers
+	messageID := r.Header.Get("X-SMTS-Message-ID")
+	timestamp := r.Header.Get("X-SMTS-Timestamp")
+	source := r.Header.Get("X-SMTS-Source")
+
+	// Create message for ArtemisMQ
+	message := Message{
+		ID:        messageID,
+		Timestamp: timestamp,
+		Topic:     topic,
+		Source:    source,
+		Headers: map[string]string{
+			"X-SMTS-Message-ID": messageID,
+			"X-SMTS-Timestamp":  timestamp,
+			"X-SMTS-Source":     source,
+			"Content-Type":      "application/json",
+		},
+		Body: body,
+	}
+
+	// Marshal message to JSON
+	messageBytes, err := json.Marshal(message)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to marshal message: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	// Send to ArtemisMQ with proper SMTS headers
+	err = api.stompConn.Send(
+		api.queueName,
+		"application/json",
+		messageBytes,
+		stomp.SendOpt.Header("smts-message-id", messageID),
+		stomp.SendOpt.Header("smts-timestamp", timestamp),
+		stomp.SendOpt.Header("smts-source", "artemis"), // Mark as from Artemis for Flow 1
+		stomp.SendOpt.Header("smts-topic", topic),
+		stomp.SendOpt.Header("persistent", "true"),
+	)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to send to ArtemisMQ: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Message forwarded to ArtemisMQ: %s (topic: %s)", messageID, topic)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "accepted",
+		"message": "Message forwarded to ArtemisMQ",
+		"id":      messageID,
+	})
+}
+
+
+// HealthCheck handles health check endpoint
+func (api *CorporateAPI) HealthCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":    "healthy",
+		"service":   "corporate-api",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// StartMessageConsumer starts consuming messages from ArtemisMQ for Flow 2 (INT→EXT)
+func (api *CorporateAPI) StartMessageConsumer() {
+	go func() {
+		for {
+			// Subscribe to Flow 2 queue (different from Flow 1 queue)
+			sub, err := api.stompConn.Subscribe(api.flow2QueueName, stomp.AckAuto)
+			if err != nil {
+				log.Printf("Failed to subscribe to ArtemisMQ queue: %v, retrying in 5 seconds...", err)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+
+			log.Printf("Started consuming messages from ArtemisMQ queue: %s", api.flow2QueueName)
+
+			for {
+				msg := <-sub.C
+				if msg == nil {
+					log.Printf("Subscription channel closed, reconnecting...")
+					break
+				}
+
+				// Process the message
+				if err := api.processArtemisMessage(msg); err != nil {
+					log.Printf("Failed to process message from ArtemisMQ: %v", err)
+				}
+			}
+
+			// If we get here, the subscription was closed, so we'll reconnect
+			time.Sleep(2 * time.Second)
+		}
+	}()
+}
+
+// processArtemisMessage processes a message received from ArtemisMQ
+func (api *CorporateAPI) processArtemisMessage(msg *stomp.Message) error {
+	var message Message
+	if err := json.Unmarshal(msg.Body, &message); err != nil {
+		return fmt.Errorf("failed to unmarshal message: %w", err)
+	}
+
+	log.Printf("Received message from ArtemisMQ: %s (topic: %s)", message.ID, message.Topic)
+
+	// Forward to EXT-SMTS
+	extSMTSURL := fmt.Sprintf("%s/corp_message/%s", api.extSMTSURL, message.Topic)
+	
+	client := &http.Client{Timeout: 10 * time.Second}
+	
+	// Create request body
+	messageBytes, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+	
+	req, err := http.NewRequest("POST", extSMTSURL, bytes.NewReader(messageBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", "test-api-key")
+	req.Header.Set("X-SMTS-Message-ID", message.ID)
+	req.Header.Set("X-SMTS-Timestamp", message.Timestamp)
+	req.Header.Set("X-SMTS-Source", "corporate-api") // Mark as from corporate API for Flow 2
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Warning: Failed to send to EXT-SMTS: %v (message will be retried)", err)
+		return err
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Warning: EXT-SMTS returned status %d for message %s", resp.StatusCode, message.ID)
+	} else {
+		log.Printf("Message delivered to EXT-SMTS: %s (topic: %s)", message.ID, message.Topic)
+	}
+
+	return nil
+}
+
+func main() {
+	// Configuration
+	artemisURL := os.Getenv("ARTEMIS_URL")
+	if artemisURL == "" {
+		artemisURL = "artemis-test:61613"
+	}
+
+	extSMTSURL := os.Getenv("EXT_SMTS_URL")
+	if extSMTSURL == "" {
+		extSMTSURL = "http://smts-ext-test:18082"
+	}
+
+	queueName := os.Getenv("ARTEMIS_QUEUE")
+	if queueName == "" {
+		queueName = "SMTS_INT_TEST_QUEUE"
+	}
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	// Initialize corporate API
+	api, err := NewCorporateAPI(artemisURL, extSMTSURL, queueName)
+	if err != nil {
+		log.Fatalf("Failed to initialize corporate API: %v", err)
+	}
+	defer api.stompConn.Disconnect()
+
+	// Start consuming messages from ArtemisMQ for Flow 2
+	api.StartMessageConsumer()
+
+	// Setup HTTP routes
+	http.HandleFunc("/health", api.HealthCheck)
+	
+	// Flow 1: EXT → INT - Corporate API receives from EXT-SMTS
+	// Handle any topic dynamically using a catch-all handler
+	http.HandleFunc("/", api.HandleRoot)
+	
+
+	log.Printf("Corporate API server starting on port %s", port)
+	log.Printf("ArtemisMQ URL: %s", artemisURL)
+	log.Printf("EXT-SMTS URL: %s", extSMTSURL)
+	log.Printf("Artemis Queue: %s", queueName)
+
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}

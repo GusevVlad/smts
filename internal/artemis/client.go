@@ -6,27 +6,43 @@ import (
 	"fmt"
 	"time"
 
-	"smts/internal/message"
 	"smts/pkg/types"
 	"smts/pkg/utils"
 	"github.com/go-stomp/stomp"
 	"go.uber.org/zap"
 )
 
+// MessageProcessor defines the interface for processing messages from ArtemisMQ
+type MessageProcessor interface {
+	HandleMessage(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error)
+}
+
 // Client represents an ArtemisMQ client
 type Client struct {
-	config    *types.ArtemisConfig
-	logger    *zap.Logger
-	conn      *stomp.Conn
-	connected bool
+	config        *types.ArtemisConfig
+	logger        *zap.Logger
+	conn          *stomp.Conn
+	connected     bool
+	publishQueue  string // Queue for publishing messages (Flow 2)
 }
 
 // NewClient creates a new ArtemisMQ client
 func NewClient(config *types.ArtemisConfig, logger *zap.Logger) (*Client, error) {
 	client := &Client{
-		config: config,
-		logger: logger,
+		config:       config,
+		logger:       logger,
+		publishQueue: config.Queue, // Default to same queue for backward compatibility
 	}
+
+	// For INT deployment, use different queue for publishing (Flow 2)
+	if config.PublishQueue != "" {
+		client.publishQueue = config.PublishQueue
+	}
+
+	logger.Debug("Artemis client configuration",
+		zap.String("queue", config.Queue),
+		zap.String("publish_queue", config.PublishQueue),
+		zap.String("actual_publish_queue", client.publishQueue))
 
 	if err := client.connect(); err != nil {
 		return nil, err
@@ -63,7 +79,7 @@ func (c *Client) connect() error {
 }
 
 // Start begins consuming messages from ArtemisMQ
-func (c *Client) Start(ctx context.Context, processor *message.Processor) error {
+func (c *Client) Start(ctx context.Context, processor MessageProcessor) error {
 	if !c.connected || c.conn == nil {
 		return types.NewSMTSError(types.ErrArtemisConnection, "Not connected to ArtemisMQ")
 	}
@@ -83,7 +99,7 @@ func (c *Client) Start(ctx context.Context, processor *message.Processor) error 
 }
 
 // processMessages processes messages from ArtemisMQ subscription
-func (c *Client) processMessages(ctx context.Context, sub *stomp.Subscription, processor *message.Processor) {
+func (c *Client) processMessages(ctx context.Context, sub *stomp.Subscription, processor MessageProcessor) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -102,7 +118,7 @@ func (c *Client) processMessages(ctx context.Context, sub *stomp.Subscription, p
 }
 
 // handleMessage processes a single ArtemisMQ message
-func (c *Client) handleMessage(ctx context.Context, msg *stomp.Message, processor *message.Processor) {
+func (c *Client) handleMessage(ctx context.Context, msg *stomp.Message, processor MessageProcessor) {
 	operation := "artemis_process_message"
 	startTime := time.Now()
 
@@ -229,32 +245,25 @@ func (c *Client) PublishMessage(msg *types.Message) error {
 		return types.WrapSMTSError(err, types.ErrArtemisPublish, "Failed to marshal message to JSON")
 	}
 
-	// Create Artemis message with headers
-	artemisMsg := &stomp.Message{
-		Destination: c.config.Queue,
-		Body:        messageData,
-	}
-
-	// Add SMTS headers
-	artemisMsg.Header.Set("smts-message-id", msg.ID)
-	artemisMsg.Header.Set("smts-timestamp", msg.Timestamp.Format(time.RFC3339))
-	artemisMsg.Header.Set("smts-source", msg.Source)
-	artemisMsg.Header.Set("smts-topic", msg.Topic)
-
-	// Add custom headers
-	for key, value := range msg.Headers {
-		artemisMsg.Header.Set(key, value)
-	}
-
-	// Publish the message using the correct Send method signature
-	if err := c.conn.Send(artemisMsg.Destination, "text/plain", artemisMsg.Body); err != nil {
+	// Publish the message with headers using the same approach as corporate API
+	err = c.conn.Send(
+		c.publishQueue,
+		"application/json",
+		messageData,
+		stomp.SendOpt.Header("smts-message-id", msg.ID),
+		stomp.SendOpt.Header("smts-timestamp", msg.Timestamp.Format(time.RFC3339)),
+		stomp.SendOpt.Header("smts-source", msg.Source),
+		stomp.SendOpt.Header("smts-topic", msg.Topic),
+		stomp.SendOpt.Header("persistent", "true"),
+	)
+	if err != nil {
 		return types.WrapSMTSError(err, types.ErrArtemisPublish, "Failed to publish message to ArtemisMQ")
 	}
 
 	c.logger.Debug("Message published to ArtemisMQ",
 		zap.String("message_id", msg.ID),
 		zap.String("topic", msg.Topic),
-		zap.String("queue", c.config.Queue))
+		zap.String("queue", c.publishQueue))
 
 	return nil
 }

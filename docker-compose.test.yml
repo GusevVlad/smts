@@ -16,85 +16,28 @@ services:
       timeout: 10s
       retries: 3
 
-  # Test API server for simulating corporate API
-  api-mock:
-    image: mockserver/mockserver:mockserver-5.15.0
-    container_name: api-mock
-    ports:
-      - "18080:1080"  # EXT test API
-      - "18082:1081"  # INT test API
-    environment:
-      - MOCKSERVER_LOG_LEVEL=INFO
-      - MOCKSERVER_SERVER_PORT=1080,1081
-    # MockServer will start automatically with the environment variable
-    # We'll use a separate init container to set up expectations
 
-  # MockServer initialization container
-  api-mock-init:
-    image: curlimages/curl:latest
-    container_name: api-mock-init
+  # Corporate API service for testing message flows
+  corporate-api:
+    build:
+      context: .
+      dockerfile: tests/mocks/corporate-api/Dockerfile
+    container_name: corporate-api
+    ports:
+      - "18080:8080"  # Corporate API service
+    environment:
+      - ARTEMIS_URL=artemis-test:61613
+      - EXT_SMTS_URL=http://smts-ext-test:18082
+      - ARTEMIS_QUEUE=SMTS_INT_TEST_QUEUE
+      - PORT=8080
     depends_on:
-      api-mock:
-        condition: service_started
-    command: >
-      sh -c "
-        echo 'Waiting for MockServer to be ready...' &&
-        until curl -s http://api-mock:1081/status > /dev/null; do
-          echo 'Waiting for MockServer...'
-          sleep 2
-        done &&
-        echo 'MockServer is ready. Initializing expectations...' &&
-        
-        # Configure API Mock expectations for EXT SMTS (port 1080)
-        echo 'Configuring API Mock expectations for EXT SMTS...' &&
-        
-        # Health check endpoint
-        curl -X PUT -s http://api-mock:1081/expectation -d '{
-          \"httpRequest\": {
-            \"method\": \"GET\",
-            \"path\": \"/health\"
-          },
-          \"httpResponse\": {
-            \"statusCode\": 200,
-            \"body\": \"OK\"
-          }
-        }' > /dev/null &&
-        
-        # Message delivery endpoint for EXT SMTS
-        curl -X PUT -s http://api-mock:1081/expectation -d '{
-          \"httpRequest\": {
-            \"method\": \"POST\",
-            \"path\": \"/test.monterra.event\",
-            \"headers\": {
-              \"X-API-Key\": [\"test-api-key\"]
-            }
-          },
-          \"httpResponse\": {
-            \"statusCode\": 200,
-            \"body\": \"{\\\"status\\\": \\\"delivered\\\"}\"
-          }
-        }' > /dev/null &&
-        
-        # Configure API Mock expectations for INT SMTS (port 1081)
-        echo 'Configuring API Mock expectations for INT SMTS...' &&
-        
-        # DLP validation endpoint for INT SMTS
-        curl -X PUT -s http://api-mock:1081/expectation -d '{
-          \"httpRequest\": {
-            \"method\": \"POST\",
-            \"path\": \"/validate\",
-            \"headers\": {
-              \"X-API-Key\": [\"test-api-key\"]
-            }
-          },
-          \"httpResponse\": {
-            \"statusCode\": 200,
-            \"body\": \"{\\\"approved\\\": true, \\\"reasons\\\": []}\"
-          }
-        }' > /dev/null &&
-        
-        echo 'API MockServer expectations configured successfully!'
-      "
+      artemis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Test DLP service for INT SMTS tests
   dlp-mock:
@@ -156,41 +99,7 @@ services:
         echo 'DLP MockServer expectations configured successfully!'
       "
 
-  smts-test-runner:
-    build:
-      context: .
-      dockerfile: Dockerfile.test
-      target: test-runner
-    container_name: smts-test-runner
-    depends_on:
-      artemis-test:
-        condition: service_healthy
-      api-mock:
-        condition: service_started
-      dlp-mock:
-        condition: service_started
-      smts-ext-test:
-        condition: service_healthy
-      smts-int-test:
-        condition: service_healthy
-    environment:
-      - ARTEMIS_URL=tcp://artemis-test:61613
-      - API_BASE_URL=http://api-mock:1080
-      - DLP_ENDPOINT=http://dlp-mock:1080/validate
-      - LOG_LEVEL=debug
-      - LOG_PATH=/app/logs
-    volumes:
-      - ./test-results:/app/test-results
-      - ./docker-logs/smts-test-runner:/app/logs
-    command: >
-      sh -c "
-        echo 'Waiting for all services to be ready...' &&
-        sleep 5 &&
-        echo '=== Running Unit Tests ===' &&
-        /app/bin/run-unit-tests.sh 2>&1 | tee /app/logs/unit-tests.log &&
-        echo '=== Running Integration Tests ===' &&
-        /app/bin/run-integration-tests.sh 2>&1 | tee /app/logs/integration-tests.log
-      "
+
 
   # EXT SMTS test service
   smts-ext-test:
@@ -200,8 +109,8 @@ services:
       target: builder
     container_name: smts-ext-test
     depends_on:
-      api-mock:
-        condition: service_started
+      corporate-api:
+        condition: service_healthy
     ports:
       - "14222:14222"  # NATS server port for testing
       - "18091:18081"  # Health server port for testing
@@ -229,8 +138,8 @@ services:
     depends_on:
       artemis-test:
         condition: service_healthy
-      api-mock:
-        condition: service_started
+      corporate-api:
+        condition: service_healthy
       dlp-mock:
         condition: service_started
     ports:

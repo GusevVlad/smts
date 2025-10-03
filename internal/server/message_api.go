@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"smts/internal/nats"
@@ -132,9 +133,9 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	received := 0
 
 	// For workqueue streams, we need to use the existing consumer
-	// Use the consumer that's already configured for the SMTS service
-	consumerName := m.config.NATS.Consumer.DurableName
-	streamName := m.config.NATS.Stream.Name
+	// Use the external consumer for reading incoming INT messages
+	consumerName := m.config.NATS.ExternalConsumer.DurableName
+	streamName := m.config.NATS.ExternalStream.Name
 	
 	// Check if the consumer exists
 	_, err := js.ConsumerInfo(streamName, consumerName)
@@ -147,8 +148,9 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Subscribe to the existing consumer
-	sub, err := js.PullSubscribe(topic, consumerName, natsio.Bind(streamName, consumerName))
+	// For external stream, use the external topic pattern
+	externalTopic := "external." + topic
+	sub, err := js.PullSubscribe(externalTopic, consumerName, natsio.Bind(streamName, consumerName))
 	if err != nil {
 		m.logger.Error("Failed to subscribe to messages",
 			zap.String("topic", topic),
@@ -181,10 +183,15 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 			}
 		}
 
-		// Create message response
+		// Create message response - use original topic (remove "external." prefix)
+		originalTopic := topic
+		if strings.HasPrefix(topic, "external.") {
+			originalTopic = strings.TrimPrefix(topic, "external.")
+		}
+		
 		messageData := map[string]interface{}{
 			"id":        headers["X-SMTS-Message-ID"],
-			"topic":     topic,
+			"topic":     originalTopic,
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 			"source":    headers["X-SMTS-Source"],
 			"headers":   headers,

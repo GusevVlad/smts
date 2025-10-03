@@ -22,26 +22,28 @@ type APIClient interface {
 
 // Client represents a corporate API client
 type Client struct {
-	client  *resty.Client
-	config  *types.APIConfig
-	logger  *zap.Logger
-	baseURL string
+	client    *resty.Client
+	apiConfig *types.APIConfig
+	dlpConfig *types.DLPConfig
+	logger    *zap.Logger
+	baseURL   string
 }
 
 // NewClient creates a new corporate API client
-func NewClient(config *types.APIConfig, logger *zap.Logger) *Client {
+func NewClient(apiConfig *types.APIConfig, dlpConfig *types.DLPConfig, logger *zap.Logger) *Client {
 	client := resty.New().
-		SetTimeout(config.Timeout).
+		SetTimeout(apiConfig.Timeout).
 		SetRetryCount(0). // We'll handle retries ourselves
 		SetHeader("User-Agent", "SMTS/1.0")
 
 	// Note: Authentication headers are set per-request to avoid conflicts
 
 	return &Client{
-		client:  client,
-		config:  config,
-		logger:  logger,
-		baseURL: config.BaseURL,
+		client:    client,
+		apiConfig: apiConfig,
+		dlpConfig: dlpConfig,
+		logger:    logger,
+		baseURL:   apiConfig.BaseURL,
 	}
 }
 
@@ -74,8 +76,8 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 		SetHeader("Content-Type", "application/json")
 
 	// Add API key header if configured
-	if c.config.Auth.Type == "api_key" && c.config.Auth.APIKey != "" {
-		request.SetHeader("X-API-Key", c.config.Auth.APIKey)
+	if c.apiConfig.Auth.Type == "api_key" && c.apiConfig.Auth.APIKey != "" {
+		request.SetHeader("X-API-Key", c.apiConfig.Auth.APIKey)
 	}
 
 	// Add SMTS headers
@@ -93,8 +95,8 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 	var err error
 
 	retryConfig := utils.RetryConfig{
-		MaxAttempts: c.config.Retry.MaxAttempts,
-		Backoff:     c.config.Retry.Backoff,
+		MaxAttempts: c.apiConfig.Retry.MaxAttempts,
+		Backoff:     c.apiConfig.Retry.Backoff,
 		Jitter:      true,
 	}
 
@@ -203,8 +205,15 @@ func (c *Client) ValidateMessage(ctx context.Context, msg *types.Message) (*type
 		},
 	}
 
-	// Build the endpoint URL
-	endpoint := fmt.Sprintf("%s/validate", c.baseURL)
+	// Build the endpoint URL - use DLP endpoint if DLP is enabled
+	endpoint := c.dlpConfig.Endpoint
+	if !c.dlpConfig.Enabled {
+		// If DLP is disabled, return a mock approved response
+		return &types.DLPValidationResponse{
+			Approved: true,
+			Reasons:  []string{},
+		}, nil
+	}
 
 	// Prepare the request
 	request := c.client.R().
@@ -213,8 +222,8 @@ func (c *Client) ValidateMessage(ctx context.Context, msg *types.Message) (*type
 		SetHeader("Content-Type", "application/json")
 
 	// Add API key header if configured
-	if c.config.Auth.Type == "api_key" && c.config.Auth.APIKey != "" {
-		request.SetHeader("X-API-Key", c.config.Auth.APIKey)
+	if c.apiConfig.Auth.Type == "api_key" && c.apiConfig.Auth.APIKey != "" {
+		request.SetHeader("X-API-Key", c.apiConfig.Auth.APIKey)
 	}
 
 	// Execute the request with retry
@@ -325,8 +334,8 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 		SetContext(ctx)
 
 	// Add API key header if configured
-	if c.config.Auth.Type == "api_key" && c.config.Auth.APIKey != "" {
-		request.SetHeader("X-API-Key", c.config.Auth.APIKey)
+	if c.apiConfig.Auth.Type == "api_key" && c.apiConfig.Auth.APIKey != "" {
+		request.SetHeader("X-API-Key", c.apiConfig.Auth.APIKey)
 	}
 
 	resp, err := request.Get(endpoint)

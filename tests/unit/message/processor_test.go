@@ -25,7 +25,7 @@ func TestProcessor_HandleMessage_EXT_Success(t *testing.T) {
 	// Mock NATS client
 	mockNATSClient := &mocks.MockNATSClient{}
 	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
+	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, nil, nil, logger)
 	
 	// Create test message
 	msg := &types.Message{
@@ -65,7 +65,7 @@ func TestProcessor_HandleMessage_INT_Success(t *testing.T) {
 	// Mock NATS client
 	mockNATSClient := &mocks.MockNATSClient{}
 	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
+	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, nil, nil, logger)
 	
 	// Create test message
 	msg := &types.Message{
@@ -112,7 +112,7 @@ func TestProcessor_HandleMessage_INT_DLPRejected(t *testing.T) {
 	// Mock NATS client
 	mockNATSClient := &mocks.MockNATSClient{}
 	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
+	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, nil, nil, logger)
 	
 	// Create test message
 	msg := &types.Message{
@@ -152,7 +152,7 @@ func TestProcessor_HandleMessage_INT_DLPError(t *testing.T) {
 	// Mock NATS client
 	mockNATSClient := &mocks.MockNATSClient{}
 	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
+	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, nil, nil, logger)
 	
 	// Create test message
 	msg := &types.Message{
@@ -186,7 +186,7 @@ func TestProcessor_HandleMessage_EXT_DeliveryError(t *testing.T) {
 	// Mock NATS client
 	mockNATSClient := &mocks.MockNATSClient{}
 	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
+	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, nil, nil, logger)
 	
 	// Create test message
 	msg := &types.Message{
@@ -228,7 +228,7 @@ func TestProcessor_HandleMessage_UnknownDeployment(t *testing.T) {
 	// Mock NATS client
 	mockNATSClient := &mocks.MockNATSClient{}
 	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
+	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, nil, nil, logger)
 	
 	// Create test message
 	msg := &types.Message{
@@ -246,15 +246,13 @@ func TestProcessor_HandleMessage_UnknownDeployment(t *testing.T) {
 	assert.Contains(t, err.Error(), "Unknown deployment type")
 }
 
-func TestProcessor_ValidatePermissions_Success(t *testing.T) {
+func TestProcessor_ValidateTopic_Success(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	
 	// Create test config with topics configuration
 	config := mocks.CreateTestConfig("ext")
 	config.Topics.Topics = map[string]types.TopicPermission{
 		"monterra.event": {
-			ReadRoles:   []string{"ext_reader"},
-			WriteRoles:  []string{"ext_writer"},
 			Description: "Monterra events",
 		},
 	}
@@ -265,31 +263,20 @@ func TestProcessor_ValidatePermissions_Success(t *testing.T) {
 	// Mock NATS client
 	mockNATSClient := &mocks.MockNATSClient{}
 	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
+	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, nil, nil, logger)
 	
-	// Create test message with configured topic
-	msg := &types.Message{
-		ID:        "test-message-123",
-		Timestamp: time.Now().UTC(),
-		Topic:     "monterra.event",
-		Source:    "test",
-		Body:      []byte(`{"event": "test"}`),
-	}
-	
-	err := processor.ValidatePermissions(msg)
+	err := processor.ValidateTopic("monterra.event")
 	
 	assert.NoError(t, err)
 }
 
-func TestProcessor_ValidatePermissions_UnknownTopic(t *testing.T) {
+func TestProcessor_ValidateTopic_UnknownTopic(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	
 	// Create test config with topics configuration
 	config := mocks.CreateTestConfig("ext")
 	config.Topics.Topics = map[string]types.TopicPermission{
 		"monterra.event": {
-			ReadRoles:   []string{"ext_reader"},
-			WriteRoles:  []string{"ext_writer"},
 			Description: "Monterra events",
 		},
 	}
@@ -300,18 +287,9 @@ func TestProcessor_ValidatePermissions_UnknownTopic(t *testing.T) {
 	// Mock NATS client
 	mockNATSClient := &mocks.MockNATSClient{}
 	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
+	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, nil, nil, logger)
 	
-	// Create test message with unknown topic
-	msg := &types.Message{
-		ID:        "test-message-123",
-		Timestamp: time.Now().UTC(),
-		Topic:     "unknown.topic",
-		Source:    "test",
-		Body:      []byte(`{"event": "test"}`),
-	}
-	
-	err := processor.ValidatePermissions(msg)
+	err := processor.ValidateTopic("unknown.topic")
 	
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Topic not configured")
@@ -329,7 +307,7 @@ func TestProcessor_HealthCheck_Success(t *testing.T) {
 	// Mock NATS client
 	mockNATSClient := &mocks.MockNATSClient{}
 	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
+	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, nil, nil, logger)
 	
 	// Mock successful health checks
 	mockAPIClient.On("HealthCheck", mock.Anything).Return(nil)
@@ -354,7 +332,7 @@ func TestProcessor_HealthCheck_APIError(t *testing.T) {
 	// Mock NATS client
 	mockNATSClient := &mocks.MockNATSClient{}
 	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
+	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, nil, nil, logger)
 	
 	// Mock API health check failure
 	mockAPIClient.On("HealthCheck", mock.Anything).Return(types.NewSMTSError(types.ErrHealthCheck, "API unavailable"))
@@ -378,7 +356,7 @@ func TestProcessor_HealthCheck_NATSError(t *testing.T) {
 	// Mock NATS client
 	mockNATSClient := &mocks.MockNATSClient{}
 	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
+	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, nil, nil, logger)
 	
 	// Mock successful API health check but NATS failure
 	mockAPIClient.On("HealthCheck", mock.Anything).Return(nil)
@@ -423,7 +401,7 @@ func TestProcessor_DeploymentTypeMethods(t *testing.T) {
 			mockAPIClient := &mocks.MockAPIClient{}
 			mockNATSClient := &mocks.MockNATSClient{}
 			
-			processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
+			processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, nil, nil, logger)
 			
 			assert.Equal(t, tt.deploymentType, processor.GetDeploymentType())
 			assert.Equal(t, tt.isEXT, processor.IsEXTDeployment())
@@ -431,198 +409,3 @@ func TestProcessor_DeploymentTypeMethods(t *testing.T) {
 		})
 	}
 }
-
-func TestProcessor_ValidatePermissions_Rejected(t *testing.T) {
-	logger, _ := zap.NewDevelopment()
-	
-	// Create test config with topics configuration
-	config := mocks.CreateTestConfig("ext")
-	config.Topics.Topics = map[string]types.TopicPermission{
-		"monterra.event": {
-			ReadRoles:   []string{"ext_reader"}, // Only ext_reader can read
-			WriteRoles:  []string{"ext_writer"},
-			Description: "Monterra events",
-		},
-		"pact_update.event": {
-			ReadRoles:   []string{"int_reader"}, // Only int_reader can read
-			WriteRoles:  []string{"int_writer"},
-			Description: "Pact update events",
-		},
-	}
-
-	// Mock API client
-	mockAPIClient := &mocks.MockAPIClient{}
-	
-	// Mock NATS client
-	mockNATSClient := &mocks.MockNATSClient{}
-	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
-
-	tests := []struct {
-		name        string
-		message     *types.Message
-		expectedErr string
-	}{
-		{
-			name: "INT reader trying to read EXT-only topic",
-			message: &types.Message{
-				ID:        "test-message-1",
-				Timestamp: time.Now().UTC(),
-				Topic:     "monterra.event",
-				Source:    "int_smts", // This will map to int_reader role
-				Body:      []byte(`{"event": "test"}`),
-			},
-			expectedErr: "Role does not have read permission for topic",
-		},
-		{
-			name: "EXT reader trying to read INT-only topic",
-			message: &types.Message{
-				ID:        "test-message-2",
-				Timestamp: time.Now().UTC(),
-				Topic:     "pact_update.event",
-				Source:    "ext_smts", // This will map to ext_reader role
-				Body:      []byte(`{"update": "test"}`),
-			},
-			expectedErr: "Role does not have read permission for topic",
-		},
-		{
-			name: "Unauthorized role via header",
-			message: &types.Message{
-				ID:        "test-message-3",
-				Timestamp: time.Now().UTC(),
-				Topic:     "monterra.event",
-				Source:    "unknown_source",
-				Headers:   map[string]string{"smts-role": "unauthorized_role"},
-				Body:      []byte(`{"event": "test"}`),
-			},
-			expectedErr: "Role does not have read permission for topic",
-		},
-		{
-			name: "Default deployment role without permission",
-			message: &types.Message{
-				ID:        "test-message-4",
-				Timestamp: time.Now().UTC(),
-				Topic:     "pact_update.event",
-				Source:    "unknown_source", // Will default to ext_reader in EXT deployment
-				Body:      []byte(`{"update": "test"}`),
-			},
-			expectedErr: "Role does not have read permission for topic",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := processor.ValidatePermissions(tt.message)
-			
-			assert.Error(t, err)
-			assert.Contains(t, err.Error(), tt.expectedErr)
-			assert.Contains(t, err.Error(), "PERMISSION_DENIED_ERROR")
-		})
-	}
-}
-
-func TestProcessor_ValidatePermissions_RoleExtraction(t *testing.T) {
-	logger, _ := zap.NewDevelopment()
-	
-	// Create test config with topics configuration
-	config := mocks.CreateTestConfig("ext")
-	config.Topics.Topics = map[string]types.TopicPermission{
-		"monterra.event": {
-			ReadRoles:   []string{"ext_reader", "int_reader"},
-			WriteRoles:  []string{"ext_writer", "int_writer"},
-			Description: "Monterra events",
-		},
-	}
-
-	// Mock API client
-	mockAPIClient := &mocks.MockAPIClient{}
-	
-	// Mock NATS client
-	mockNATSClient := &mocks.MockNATSClient{}
-	
-	processor := message.NewProcessor(config, mockAPIClient, mockNATSClient, logger)
-
-	tests := []struct {
-		name           string
-		message        *types.Message
-		expectedRole   string
-		shouldSucceed  bool
-	}{
-		{
-			name: "Role from header takes precedence",
-			message: &types.Message{
-				ID:        "test-message-1",
-				Timestamp: time.Now().UTC(),
-				Topic:     "monterra.event",
-				Source:    "ext_smts",
-				Headers:   map[string]string{"smts-role": "int_reader"},
-				Body:      []byte(`{"event": "test"}`),
-			},
-			expectedRole:  "int_reader",
-			shouldSucceed: true,
-		},
-		{
-			name: "Role from ext_smts source",
-			message: &types.Message{
-				ID:        "test-message-2",
-				Timestamp: time.Now().UTC(),
-				Topic:     "monterra.event",
-				Source:    "ext_smts",
-				Body:      []byte(`{"event": "test"}`),
-			},
-			expectedRole:  "ext_reader",
-			shouldSucceed: true,
-		},
-		{
-			name: "Role from int_smts source",
-			message: &types.Message{
-				ID:        "test-message-3",
-				Timestamp: time.Now().UTC(),
-				Topic:     "monterra.event",
-				Source:    "int_smts",
-				Body:      []byte(`{"event": "test"}`),
-			},
-			expectedRole:  "int_reader",
-			shouldSucceed: true,
-		},
-		{
-			name: "Role from artemis source",
-			message: &types.Message{
-				ID:        "test-message-4",
-				Timestamp: time.Now().UTC(),
-				Topic:     "monterra.event",
-				Source:    "artemis",
-				Body:      []byte(`{"event": "test"}`),
-			},
-			expectedRole:  "int_reader",
-			shouldSucceed: true,
-		},
-		{
-			name: "Role from smts-publisher in EXT deployment",
-			message: &types.Message{
-				ID:        "test-message-5",
-				Timestamp: time.Now().UTC(),
-				Topic:     "monterra.event",
-				Source:    "smts-publisher",
-				Body:      []byte(`{"event": "test"}`),
-			},
-			expectedRole:  "ext_reader",
-			shouldSucceed: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := processor.ValidatePermissions(tt.message)
-			
-			if tt.shouldSucceed {
-				assert.NoError(t, err)
-			} else {
-				assert.Error(t, err)
-			}
-		})
-	}
-}
-
-// Note: formatDLPReasons is a private method, so we can't test it directly
-// The functionality is tested indirectly through the DLP rejection tests

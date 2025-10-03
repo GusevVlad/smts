@@ -28,8 +28,12 @@ type NATSConfig struct {
 	Embedded bool          `mapstructure:"embedded" yaml:"embedded"`
 	Host     string        `mapstructure:"host" yaml:"host"`
 	Port     int           `mapstructure:"port" yaml:"port"`
-	Stream   StreamConfig  `mapstructure:"stream" yaml:"stream"`
-	Consumer ConsumerConfig `mapstructure:"consumer" yaml:"consumer"`
+	// Client stream for messages from local clients
+	ClientStream   StreamConfig  `mapstructure:"client_stream" yaml:"client_stream"`
+	ClientConsumer ConsumerConfig `mapstructure:"client_consumer" yaml:"client_consumer"`
+	// External stream for messages from different network instances
+	ExternalStream   StreamConfig  `mapstructure:"external_stream" yaml:"external_stream"`
+	ExternalConsumer ConsumerConfig `mapstructure:"external_consumer" yaml:"external_consumer"`
 }
 
 // StreamConfig contains NATS stream configuration
@@ -44,8 +48,8 @@ type StreamConfig struct {
 
 // ConsumerConfig contains NATS consumer configuration
 type ConsumerConfig struct {
-	DurableName  string `mapstructure:"durable_name" yaml:"durable_name"`
-	AckPolicy    string `mapstructure:"ack_policy" yaml:"ack_policy"`
+	DurableName   string `mapstructure:"durable_name" yaml:"durable_name"`
+	AckPolicy     string `mapstructure:"ack_policy" yaml:"ack_policy"`
 	DeliverPolicy string `mapstructure:"deliver_policy" yaml:"deliver_policy"`
 }
 
@@ -59,20 +63,21 @@ type APIConfig struct {
 
 // DLPConfig contains DLP validation configuration
 type DLPConfig struct {
-	Enabled  bool         `mapstructure:"enabled" yaml:"enabled"`
-	Endpoint string       `mapstructure:"endpoint" yaml:"endpoint"`
+	Enabled  bool          `mapstructure:"enabled" yaml:"enabled"`
+	Endpoint string        `mapstructure:"endpoint" yaml:"endpoint"`
 	Timeout  time.Duration `mapstructure:"timeout" yaml:"timeout"`
-	Retry    RetryConfig  `mapstructure:"retry" yaml:"retry"`
+	Retry    RetryConfig   `mapstructure:"retry" yaml:"retry"`
 }
 
 // ArtemisConfig contains ArtemisMQ configuration
 type ArtemisConfig struct {
-	Enabled  bool   `mapstructure:"enabled" yaml:"enabled"`
-	Host     string `mapstructure:"host" yaml:"host"`
-	Port     int    `mapstructure:"port" yaml:"port"`
-	Queue    string `mapstructure:"queue" yaml:"queue"`
-	Username string `mapstructure:"username" yaml:"username"`
-	Password string `mapstructure:"password" yaml:"password"`
+	Enabled      bool   `mapstructure:"enabled" yaml:"enabled"`
+	Host         string `mapstructure:"host" yaml:"host"`
+	Port         int    `mapstructure:"port" yaml:"port"`
+	Queue        string `mapstructure:"queue" yaml:"queue"`
+	PublishQueue string `mapstructure:"publish_queue" yaml:"publish_queue"`
+	Username     string `mapstructure:"username" yaml:"username"`
+	Password     string `mapstructure:"password" yaml:"password"`
 }
 
 // AuthConfig contains authentication settings
@@ -104,27 +109,6 @@ type HealthConfig struct {
 // TopicsConfig contains topic and privilege configuration
 type TopicsConfig struct {
 	Topics map[string]TopicPermission `mapstructure:"topics" yaml:"topics"`
-	Roles  map[string]RoleDefinition  `mapstructure:"roles" yaml:"roles"`
-}
-
-// UnmarshalYAML implements custom YAML unmarshaling for TopicsConfig
-func (tc *TopicsConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	// Create a temporary struct to hold the raw data
-	type rawTopicsConfig struct {
-		Topics map[string]TopicPermission `yaml:"topics"`
-		Roles  map[string]RoleDefinition  `yaml:"roles"`
-	}
-	
-	var raw rawTopicsConfig
-	if err := unmarshal(&raw); err != nil {
-		return err
-	}
-	
-	// Copy the data to the actual struct
-	tc.Topics = raw.Topics
-	tc.Roles = raw.Roles
-	
-	return nil
 }
 
 // DefaultConfig returns a configuration with default values
@@ -139,16 +123,29 @@ func DefaultConfig() *Config {
 			Embedded: true,
 			Host:     "localhost",
 			Port:     4222,
-			Stream: StreamConfig{
-				Name:      "SMTS",
-				Subjects:  []string{"monterra.>", "pact_update.>"},
+			ClientStream: StreamConfig{
+				Name:      "SMTS_CLIENT",
+				Subjects:  []string{"client.monterra.>", "client.pact_update.>"},
 				Retention: "workqueue",
 				MaxAge:    "24h",
 				Storage:   "file",
 				Replicas:  1,
 			},
-			Consumer: ConsumerConfig{
-				DurableName:  "SMTS_CONSUMER",
+			ClientConsumer: ConsumerConfig{
+				DurableName:  "SMTS_CLIENT_CONSUMER",
+				AckPolicy:    "explicit",
+				DeliverPolicy: "all",
+			},
+			ExternalStream: StreamConfig{
+				Name:      "SMTS_EXTERNAL",
+				Subjects:  []string{"external.monterra.>", "external.pact_update.>"},
+				Retention: "workqueue",
+				MaxAge:    "24h",
+				Storage:   "file",
+				Replicas:  1,
+			},
+			ExternalConsumer: ConsumerConfig{
+				DurableName:  "SMTS_EXTERNAL_CONSUMER",
 				AckPolicy:    "explicit",
 				DeliverPolicy: "all",
 			},
@@ -191,7 +188,6 @@ func DefaultConfig() *Config {
 		},
 		Topics: TopicsConfig{
 			Topics: make(map[string]TopicPermission),
-			Roles:  make(map[string]RoleDefinition),
 		},
 	}
 }

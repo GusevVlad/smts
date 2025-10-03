@@ -79,30 +79,11 @@ func (l *Loader) LoadConfig(configPath string) (*types.Config, error) {
 		
 		// Manually parse topics configuration
 		manuallyParsedTopics := make(map[string]types.TopicPermission)
-		manuallyParsedRoles := make(map[string]types.RoleDefinition)
 		
 		// Parse topics
 		for topicName, topicData := range topicsMap {
 			if topicMap, ok := topicData.(map[string]interface{}); ok {
 				topicPermission := types.TopicPermission{}
-				
-				// Extract read_roles
-				if readRoles, ok := topicMap["read_roles"].([]interface{}); ok {
-					for _, role := range readRoles {
-						if roleStr, ok := role.(string); ok {
-							topicPermission.ReadRoles = append(topicPermission.ReadRoles, roleStr)
-						}
-					}
-				}
-				
-				// Extract write_roles
-				if writeRoles, ok := topicMap["write_roles"].([]interface{}); ok {
-					for _, role := range writeRoles {
-						if roleStr, ok := role.(string); ok {
-							topicPermission.WriteRoles = append(topicPermission.WriteRoles, roleStr)
-						}
-					}
-				}
 				
 				// Extract description
 				if desc, ok := topicMap["description"].(string); ok {
@@ -113,42 +94,13 @@ func (l *Loader) LoadConfig(configPath string) (*types.Config, error) {
 			}
 		}
 		
-		// Parse roles if they exist at the same level as topics
-		if v.IsSet("roles") {
-			rolesMap := v.GetStringMap("roles")
-			for roleName, roleData := range rolesMap {
-				if roleMap, ok := roleData.(map[string]interface{}); ok {
-					roleDefinition := types.RoleDefinition{}
-					
-					// Extract description
-					if desc, ok := roleMap["description"].(string); ok {
-						roleDefinition.Description = desc
-					}
-					
-					// Extract topics
-					if topics, ok := roleMap["topics"].([]interface{}); ok {
-						for _, topic := range topics {
-							if topicStr, ok := topic.(string); ok {
-								roleDefinition.Topics = append(roleDefinition.Topics, topicStr)
-							}
-						}
-					}
-					
-					manuallyParsedRoles[roleName] = roleDefinition
-				}
-			}
-		}
-		
 		l.logger.Debug("Manually parsed topics",
 			zap.Any("topics", manuallyParsedTopics),
-			zap.Any("roles", manuallyParsedRoles),
-			zap.Int("topics_count", len(manuallyParsedTopics)),
-			zap.Int("roles_count", len(manuallyParsedRoles)))
+			zap.Int("topics_count", len(manuallyParsedTopics)))
 		
 		// If manual parsing worked, use the manually parsed topics
 		if len(manuallyParsedTopics) > 0 {
 			config.Topics.Topics = manuallyParsedTopics
-			config.Topics.Roles = manuallyParsedRoles
 			l.logger.Debug("Using manually parsed topics configuration")
 		}
 	}
@@ -156,15 +108,13 @@ func (l *Loader) LoadConfig(configPath string) (*types.Config, error) {
 	// Debug: Log topics configuration after unmarshaling
 	l.logger.Debug("Configuration unmarshaled",
 		zap.Int("topics_count", len(config.Topics.Topics)),
-		zap.Int("roles_count", len(config.Topics.Roles)),
 		zap.String("deployment", config.Deployment.Type))
 	
 	// Debug: Log all topics found
 	for topicName, topic := range config.Topics.Topics {
 		l.logger.Debug("Found topic in config",
 			zap.String("topic", topicName),
-			zap.Strings("read_roles", topic.ReadRoles),
-			zap.Strings("write_roles", topic.WriteRoles),
+			zap.String("description", topic.Description),
 			zap.String("deployment", config.Deployment.Type))
 	}
 
@@ -250,31 +200,10 @@ func (l *Loader) validateTopics(topics types.TopicsConfig, deploymentType string
 		if topicName == "" {
 			return types.NewSMTSError(types.ErrConfigValidate, "Topic name cannot be empty")
 		}
-		if len(topic.ReadRoles) == 0 {
-			return types.NewSMTSErrorWithDetails(
-				types.ErrConfigValidate,
-				"Topic must have at least one read role",
-				fmt.Sprintf("topic: %s", topicName),
-			)
-		}
-		if len(topic.WriteRoles) == 0 {
-			return types.NewSMTSErrorWithDetails(
-				types.ErrConfigValidate,
-				"Topic must have at least one write role",
-				fmt.Sprintf("topic: %s", topicName),
-			)
-		}
-
-		// Validate that referenced roles exist
-		for _, role := range append(topic.ReadRoles, topic.WriteRoles...) {
-			if _, exists := topics.Roles[role]; !exists {
-				return types.NewSMTSErrorWithDetails(
-					types.ErrConfigValidate,
-					"Referenced role does not exist",
-					fmt.Sprintf("topic: %s, role: %s", topicName, role),
-				)
-			}
-		}
+		// Topic validation is now simplified - only check if topic exists
+		l.logger.Debug("Topic validated",
+			zap.String("topic", topicName),
+			zap.String("description", topic.Description))
 	}
 
 	return nil
@@ -283,11 +212,17 @@ func (l *Loader) validateTopics(topics types.TopicsConfig, deploymentType string
 // applyDeploymentDefaults applies deployment-specific default settings
 func (l *Loader) applyDeploymentDefaults(config *types.Config) {
 	// Set stream and consumer names based on deployment type
-	if config.NATS.Stream.Name == "SMTS" {
-		config.NATS.Stream.Name = fmt.Sprintf("SMTS_%s", strings.ToUpper(config.Deployment.Type))
+	if config.NATS.ClientStream.Name == "SMTS_CLIENT" {
+		config.NATS.ClientStream.Name = fmt.Sprintf("SMTS_%s_CLIENT", strings.ToUpper(config.Deployment.Type))
 	}
-	if config.NATS.Consumer.DurableName == "SMTS_CONSUMER" {
-		config.NATS.Consumer.DurableName = fmt.Sprintf("SMTS_%s_CONSUMER", strings.ToUpper(config.Deployment.Type))
+	if config.NATS.ClientConsumer.DurableName == "SMTS_CLIENT_CONSUMER" {
+		config.NATS.ClientConsumer.DurableName = fmt.Sprintf("SMTS_%s_CLIENT_CONSUMER", strings.ToUpper(config.Deployment.Type))
+	}
+	if config.NATS.ExternalStream.Name == "SMTS_EXTERNAL" {
+		config.NATS.ExternalStream.Name = fmt.Sprintf("SMTS_%s_EXTERNAL", strings.ToUpper(config.Deployment.Type))
+	}
+	if config.NATS.ExternalConsumer.DurableName == "SMTS_EXTERNAL_CONSUMER" {
+		config.NATS.ExternalConsumer.DurableName = fmt.Sprintf("SMTS_%s_EXTERNAL_CONSUMER", strings.ToUpper(config.Deployment.Type))
 	}
 
 	// Enable/disable features based on deployment type
@@ -300,8 +235,10 @@ func (l *Loader) applyDeploymentDefaults(config *types.Config) {
 	}
 
 	l.logger.Debug("Applied deployment-specific defaults",
-		zap.String("stream", config.NATS.Stream.Name),
-		zap.String("consumer", config.NATS.Consumer.DurableName),
+		zap.String("client_stream", config.NATS.ClientStream.Name),
+		zap.String("client_consumer", config.NATS.ClientConsumer.DurableName),
+		zap.String("external_stream", config.NATS.ExternalStream.Name),
+		zap.String("external_consumer", config.NATS.ExternalConsumer.DurableName),
 		zap.Bool("dlp_enabled", config.DLP.Enabled),
 		zap.Bool("artemis_enabled", config.Artemis.Enabled))
 }
@@ -328,7 +265,6 @@ func (l *Loader) LoadTopicsConfig(topicsPath string, deploymentType string) (*ty
 				zap.String("deployment", deploymentType))
 			return &types.TopicsConfig{
 				Topics: make(map[string]types.TopicPermission),
-				Roles:  make(map[string]types.RoleDefinition),
 			}, nil
 		}
 	}
