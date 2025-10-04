@@ -114,8 +114,8 @@ services:
     ports:
       - "14222:14222"  # NATS server port for testing
       - "18091:18081"  # Health server port for testing
-      - "18092:18082"  # HTTP server port for testing
-      - "19081:19081"  # Message API port for testing
+      - "18092:18082"  # HTTP server port for testing (send)
+      - "19081:19081"  # Message API port for testing (receive)
     environment:
       - CONFIG_FILE=/app/tests/configs/ext-test-config.yaml
     command: >
