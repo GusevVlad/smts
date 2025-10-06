@@ -100,6 +100,9 @@ func (c *Client) Start(ctx context.Context, processor MessageProcessor) error {
 
 // processMessages processes messages from ArtemisMQ subscription
 func (c *Client) processMessages(ctx context.Context, sub *stomp.Subscription, processor MessageProcessor) {
+	backoff := time.Millisecond * 100
+	maxBackoff := time.Second * 30
+	
 	for {
 		select {
 		case <-ctx.Done():
@@ -108,13 +111,34 @@ func (c *Client) processMessages(ctx context.Context, sub *stomp.Subscription, p
 
 		case msg := <-sub.C:
 			if msg == nil {
-				c.logger.Warn("Received nil message from ArtemisMQ")
+				c.logger.Warn("Received nil message from ArtemisMQ, backing off",
+					zap.Duration("backoff", backoff))
+				
+				// Exponential backoff with context-aware sleep
+				select {
+				case <-time.After(backoff):
+				case <-ctx.Done():
+					return
+				}
+				
+				// Increase backoff for next time, capped at max
+				backoff = minDuration(backoff*2, maxBackoff)
 				continue
 			}
-
+			
+			// Reset backoff on successful message
+			backoff = time.Millisecond * 100
 			c.handleMessage(ctx, msg, processor)
 		}
 	}
+}
+
+// minDuration returns the minimum of two durations
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // handleMessage processes a single ArtemisMQ message
