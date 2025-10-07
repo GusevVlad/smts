@@ -161,9 +161,15 @@ golang.org/x/text/unicode/norm
 golang.org/x/time/rate
 # google.golang.org/protobuf v1.31.0
 ## explicit; go 1.11
+# gopkg.in/asn1-ber.v1 v1.0.0-20181015200546-f715ec2f112d
+## explicit
+gopkg.in/asn1-ber.v1
 # gopkg.in/ini.v1 v1.67.0
 ## explicit
 gopkg.in/ini.v1
+# gopkg.in/ldap.v2 v2.5.1
+## explicit
+gopkg.in/ldap.v2
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3

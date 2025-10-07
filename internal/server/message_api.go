@@ -21,13 +21,17 @@ type MessageAPIServer struct {
 	logger     *zap.Logger
 	server     *http.Server
 	natsClient *nats.Client
+	ldapMiddleware *LDAPMiddleware
 }
 
 // NewMessageAPIServer creates a new message API server
 func NewMessageAPIServer(config *types.Config, logger *zap.Logger) *MessageAPIServer {
+	ldapMiddleware := NewLDAPMiddleware(&config.LDAP, logger)
+	
 	return &MessageAPIServer{
-		config: config,
-		logger: logger,
+		config:         config,
+		logger:         logger,
+		ldapMiddleware: ldapMiddleware,
 	}
 }
 
@@ -39,8 +43,10 @@ func (m *MessageAPIServer) SetNATSClient(client *nats.Client) {
 // Start starts the message API server
 func (m *MessageAPIServer) Start() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/messages", m.messagesHandler)
-	mux.HandleFunc("/send", m.sendHandler)
+	
+	// Apply LDAP authentication to message endpoints
+	mux.HandleFunc("/messages", m.ldapMiddleware.Authenticate(m.messagesHandler))
+	mux.HandleFunc("/send", m.ldapMiddleware.Authenticate(m.sendHandler))
 
 	// Use a different port than health server
 	port := m.config.Health.Port + 1000 // Use health port + 1000
@@ -76,6 +82,11 @@ func (m *MessageAPIServer) Stop() error {
 		}
 	}
 
+	// Close LDAP connection
+	if m.ldapMiddleware != nil {
+		m.ldapMiddleware.Close()
+	}
+
 	m.logger.Info("Message API server stopped")
 	return nil
 }
@@ -93,6 +104,14 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	
 	if topic == "" {
 		http.Error(w, `{"error": "topic parameter is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Check topic authorization if LDAP is enabled
+	if m.ldapMiddleware != nil && !m.ldapMiddleware.AuthorizeTopic(r, topic) {
+		m.logger.Warn("Topic authorization denied",
+			zap.String("topic", topic))
+		http.Error(w, `{"error": "Access denied to requested topic"}`, http.StatusForbidden)
 		return
 	}
 

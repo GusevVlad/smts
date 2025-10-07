@@ -101,6 +101,22 @@ services:
 
 
 
+  # LDAP Mock Server for testing
+  ldap-mock:
+    build:
+      context: .
+      dockerfile: tests/mocks/ldap-mock/Dockerfile
+    container_name: ldap-mock
+    ports:
+      - "11389:1389"  # LDAP mock server port
+    environment:
+      - LDAP_MOCK_PORT=1389
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:1389/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # EXT SMTS test service
   smts-ext-test:
     build:
@@ -145,8 +161,8 @@ services:
     ports:
       - "14223:14223"  # NATS server port for testing
       - "18093:18083"  # Health server port for testing
-      - "18094:18084"  # HTTP server port for testing
-      - "19083:19083"  # Message API port for testing
+      - "18094:18084"  # HTTP server port for testing (send)
+      - "19083:19083"  # Message API port for testing (receive)
     environment:
       - CONFIG_FILE=/app/tests/configs/int-test-config.yaml
     command: >

@@ -14,6 +14,7 @@ type Config struct {
 	Logging    LoggingConfig    `mapstructure:"logging" yaml:"logging"`
 	Health     HealthConfig     `mapstructure:"health" yaml:"health"`
 	Topics     TopicsConfig     `mapstructure:"topics" yaml:"topics"`
+	LDAP       LDAPConfig       `mapstructure:"ldap" yaml:"ldap"`
 }
 
 // DeploymentConfig contains deployment-specific settings
@@ -111,6 +112,24 @@ type TopicsConfig struct {
 	Topics map[string]TopicPermission `mapstructure:"topics" yaml:"topics"`
 }
 
+// LDAPConfig contains LDAP authentication and authorization configuration
+type LDAPConfig struct {
+	Enabled           bool     `mapstructure:"enabled" yaml:"enabled"`
+	Host              string   `mapstructure:"host" yaml:"host"`
+	Port              int      `mapstructure:"port" yaml:"port"`
+	Base              string   `mapstructure:"base" yaml:"base"`
+	BindDN            string   `mapstructure:"bind_dn" yaml:"bind_dn"`
+	BindPassword      string   `mapstructure:"bind_password" yaml:"bind_password"`
+	UserFilter        string   `mapstructure:"user_filter" yaml:"user_filter"`
+	GroupFilter       string   `mapstructure:"group_filter" yaml:"group_filter"`
+	Attributes        []string `mapstructure:"attributes" yaml:"attributes"`
+	ServerName        string   `mapstructure:"server_name" yaml:"server_name"`
+	UseSSL            bool     `mapstructure:"use_ssl" yaml:"use_ssl"`
+	SkipTLS           bool     `mapstructure:"skip_tls" yaml:"skip_tls"`
+	InsecureSkipVerify bool     `mapstructure:"insecure_skip_verify" yaml:"insecure_skip_verify"`
+	UseHTTP           bool     `mapstructure:"use_http" yaml:"use_http"`
+}
+
 // DefaultConfig returns a configuration with default values
 func DefaultConfig() *Config {
 	return &Config{
@@ -188,6 +207,22 @@ func DefaultConfig() *Config {
 		},
 		Topics: TopicsConfig{
 			Topics: make(map[string]TopicPermission),
+		},
+		LDAP: LDAPConfig{
+			Enabled:           false,
+			Host:              "localhost",
+			Port:              389,
+			Base:              "dc=example,dc=com",
+			BindDN:            "",
+			BindPassword:      "",
+			UserFilter:        "(uid=%s)",
+			GroupFilter:       "(member=%s)",
+			Attributes:        []string{"uid", "cn", "mail", "distinguishedName"},
+			ServerName:        "",
+			UseSSL:            false,
+			SkipTLS:           false,
+			InsecureSkipVerify: false,
+			UseHTTP:           false,
 		},
 	}
 }

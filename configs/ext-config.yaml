@@ -40,4 +40,24 @@ health:
   path: "/health"
   interval: "30s"
 
+# LDAP configuration for authentication and authorization
+ldap:
+  enabled: false
+  host: "ldap.example.com"
+  port: 389
+  base: "dc=example,dc=com"
+  bind_dn: "cn=admin,dc=example,dc=com"
+  bind_password: "${LDAP_BIND_PASSWORD}"
+  user_filter: "(uid=%s)"
+  group_filter: "(member=%s)"
+  attributes:
+    - "uid"
+    - "cn"
+    - "mail"
+    - "distinguishedName"
+  server_name: ""
+  use_ssl: false
+  skip_tls: false
+  insecure_skip_verify: false
+
 # Topics configuration will be loaded from separate topics.yaml file

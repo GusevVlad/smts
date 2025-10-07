@@ -77,3 +77,26 @@ topics:
   
   test.pact_update.event:
     description: "Test pact update events"
+
+# LDAP configuration for testing (enabled for test environment)
+ldap:
+  enabled: true
+  host: "ldap-mock"
+  port: 1389
+  base: "dc=test,dc=com"
+  bind_dn: "cn=admin,dc=test,dc=com"
+  bind_password: "adminpass"
+  user_filter: "(uid=%s)"
+  group_filter: "(member=%s)"
+  attributes:
+    - "uid"
+    - "cn"
+    - "mail"
+    - "displayName"
+    - "distinguishedName"
+    - "memberOf"
+  server_name: ""
+  use_ssl: false
+  skip_tls: false
+  insecure_skip_verify: true
+  use_http: true
