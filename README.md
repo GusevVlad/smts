@@ -193,8 +193,18 @@ flowchart TD
 
 ```bash
 docker-compose -f docker-compose.test.yml build && docker-compose -f docker-compose.test.yml up -d
+```
+
+Стенд:
+```bash
+docker-compose -f docker-compose.test.yml --profile test-runner up -d smts-test-runner
+```
+
+Вшение демо-сценарии:
+```bash
 ./test-message-flow.sh
 ```
+
 Результаты в папке /docker-logs
 
 Build the applications:

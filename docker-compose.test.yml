@@ -159,5 +159,43 @@ services:
       timeout: 5s
       retries: 5
 
+
+  smts-test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+      target: test-runner
+    container_name: smts-test-runner
+    profiles: ["test-runner"]
+    depends_on:
+      artemis-test:
+        condition: service_healthy
+      corporate-api:
+        condition: service_healthy
+      dlp-mock:
+        condition: service_started
+      smts-ext-test:
+        condition: service_healthy
+      smts-int-test:
+        condition: service_healthy
+    environment:
+      - ARTEMIS_URL=tcp://artemis-test:61613
+      - API_BASE_URL=http://corporate-api:8080
+      - DLP_ENDPOINT=http://dlp-mock:1080/validate
+      - LOG_LEVEL=debug
+      - LOG_PATH=/app/logs
+    volumes:
+      - ./docker-logs/smts-test-runner:/app/logs
+    command: >
+      sh -c "
+        echo 'Waiting for all services to be ready...' &&
+        sleep 5 &&
+        echo '=== Running Unit Tests ===' &&
+        /app/bin/run-unit-tests.sh 2>&1 | tee /app/logs/unit-tests.log &&
+        echo '=== Running Integration Tests ===' &&
+        /app/bin/run-integration-tests.sh 2>&1 | tee /app/logs/integration-tests.log
+      "
+
+
 volumes:
   artemis-test-data:

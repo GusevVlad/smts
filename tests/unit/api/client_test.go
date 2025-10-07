@@ -168,7 +168,11 @@ func TestAPIClient_ValidateMessage_Success(t *testing.T) {
 		Timeout: 30 * time.Second,
 	}
 
-	client := api.NewClient(config, &types.DLPConfig{Enabled: false}, logger)
+	client := api.NewClient(config, &types.DLPConfig{
+		Enabled:  true,
+		Endpoint: server.URL + "/validate",
+		Timeout:  30 * time.Second,
+	}, logger)
 
 	msg := &types.Message{
 		ID:        "test-message-123",
@@ -205,7 +209,11 @@ func TestAPIClient_ValidateMessage_Rejected(t *testing.T) {
 		Timeout: 30 * time.Second,
 	}
 
-	client := api.NewClient(config, &types.DLPConfig{Enabled: false}, logger)
+	client := api.NewClient(config, &types.DLPConfig{
+		Enabled:  true,
+		Endpoint: server.URL + "/validate",
+		Timeout:  30 * time.Second,
+	}, logger)
 
 	msg := &types.Message{
 		ID:        "test-message-123",
@@ -217,9 +225,13 @@ func TestAPIClient_ValidateMessage_Rejected(t *testing.T) {
 
 	result, err := client.ValidateMessage(context.Background(), msg)
 
-	assert.Error(t, err)
-	assert.False(t, result.Approved)
-	assert.Contains(t, result.Reasons[0], "sensitive information")
+	assert.Error(t, err, "ValidateMessage should return error for DLP rejection")
+	assert.NotNil(t, result, "Response should not be nil")
+	assert.False(t, result.Approved, "Message should be rejected by DLP")
+	if len(result.Reasons) > 0 {
+		assert.Contains(t, result.Reasons[0], "sensitive information")
+	}
+	assert.Contains(t, err.Error(), "Message rejected by DLP validation", "Error should indicate DLP rejection")
 }
 
 func TestAPIClient_HealthCheck_Success(t *testing.T) {

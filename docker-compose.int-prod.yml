@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # Internal SMTS Production Service
+  smts-int-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smts-int-prod
+    restart: unless-stopped
+    ports:
+      - "4223:4222"  # NATS server port (different port to avoid conflicts)
+      - "8083:8080"  # Health server port
+      - "8084:8082"  # HTTP server port
+      - "8085:8081"  # Message API port
+    env_file:
+      - .env.int-prod
+    environment:
+      - CONFIG_FILE=/app/configs/int-config.yaml
+    volumes:
+      - smts-int-data:/app/data
+      - ./configs/int-config.yaml:/app/configs/int-config.yaml:ro
+      - ./configs/topics.yaml:/app/configs/topics.yaml:ro
+    command: ["/app/bin/int-smts", "--config", "/app/configs/int-config.yaml"]
+    healthcheck:
+      test: ["CMD", "/app/bin/int-smts", "--health-check", "--config", "/app/configs/int-config.yaml"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  smts-int-data:
+    driver: local

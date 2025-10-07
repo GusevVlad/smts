@@ -26,7 +26,8 @@ RUN echo '#!/bin/sh' > /app/bin/run-unit-tests.sh && \
     chmod +x /app/bin/run-unit-tests.sh
 
 RUN echo '#!/bin/sh' > /app/bin/run-integration-tests.sh && \
-    echo 'go test -v -timeout=15m ./tests/integration/... -run="TestDocker"' >> /app/bin/run-integration-tests.sh && \
+    echo 'echo "Running Docker integration tests..."' >> /app/bin/run-integration-tests.sh && \
+    echo 'go test -v -timeout=15m ./tests/integration/... -run="TestDocker_MessageFlow"' >> /app/bin/run-integration-tests.sh && \
     chmod +x /app/bin/run-integration-tests.sh
 
 

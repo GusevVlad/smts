@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # External SMTS Production Service
+  smts-ext-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smts-ext-prod
+    restart: unless-stopped
+    ports:
+      - "4222:4222"  # NATS server port
+      - "8080:8080"  # Health server port
+      - "8082:8082"  # HTTP server port (send)
+      - "8081:8081"  # Message API port (receive)
+    env_file:
+      - .env.ext-prod
+    environment:
+      - CONFIG_FILE=/app/configs/ext-config.yaml
+    volumes:
+      - smts-ext-data:/app/data
+      - ./configs/ext-config.yaml:/app/configs/ext-config.yaml:ro
+      - ./configs/topics.yaml:/app/configs/topics.yaml:ro
+    command: ["/app/bin/ext-smts", "--config", "/app/configs/ext-config.yaml"]
+    healthcheck:
+      test: ["CMD", "/app/bin/ext-smts", "--health-check", "--config", "/app/configs/ext-config.yaml"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  smts-ext-data:
+    driver: local
