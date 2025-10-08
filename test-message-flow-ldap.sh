@@ -36,6 +36,15 @@ echo "Script location: $SCRIPT_DIR"
 echo "LDAP Username: $LDAP_USERNAME"
 echo
 
+# Test result tracking variables
+EXT_SEND_SUCCESS=false
+INT_SEND_SUCCESS=false
+EXT_TO_INT_FLOW_SUCCESS=false
+INT_TO_EXT_FLOW_SUCCESS=false
+SERVICES_HEALTHY=false
+LDAP_AUTH_SUCCESS=false
+LDAP_AUTH_FAILURE_TESTED=false
+
 # Function to generate unique message ID
 generate_message_id() {
     echo "$(date +%Y%m%d%H%M%S)-$(openssl rand -hex 4)"
@@ -307,7 +316,9 @@ echo "   Corporate API Health: http://localhost:18080/health"
 echo
 
 # Check EXT SMTS health
-check_service_health "EXT SMTS" "http://localhost:18091/health" || {
+check_service_health "EXT SMTS" "http://localhost:18091/health" && {
+    SERVICES_HEALTHY=true
+} || {
     echo "❌ EXT SMTS is not responding"
     echo "   Please make sure the test containers are running:"
     echo "   docker-compose -f docker-compose.test.yml up -d"
@@ -315,13 +326,17 @@ check_service_health "EXT SMTS" "http://localhost:18091/health" || {
 }
 
 # Check INT SMTS health
-check_service_health "INT SMTS" "http://localhost:18093/health" || {
+check_service_health "INT SMTS" "http://localhost:18093/health" && {
+    SERVICES_HEALTHY=true
+} || {
     echo "❌ INT SMTS is not responding"
     exit 1
 }
 
 # Check Corporate API health
-check_service_health "Corporate API" "http://localhost:18080/health" || {
+check_service_health "Corporate API" "http://localhost:18080/health" && {
+    SERVICES_HEALTHY=true
+} || {
     echo "❌ Corporate API is not responding"
     exit 1
 }
@@ -331,8 +346,13 @@ echo "=== Testing LDAP Authentication ==="
 echo
 
 # Test LDAP authentication failure first
-test_ldap_auth_failure "ext" "$MESSAGE_API_EXT/messages?topic=$TOPIC_MONTERRA&count=1" "EXT SMTS message API"
-test_ldap_auth_failure "int" "$MESSAGE_API_INT/messages?topic=$TOPIC_MONTERRA&count=1" "INT SMTS message API"
+test_ldap_auth_failure "ext" "$MESSAGE_API_EXT/messages?topic=$TOPIC_MONTERRA&count=1" "EXT SMTS message API" && {
+    LDAP_AUTH_FAILURE_TESTED=true
+}
+
+test_ldap_auth_failure "int" "$MESSAGE_API_INT/messages?topic=$TOPIC_MONTERRA&count=1" "INT SMTS message API" && {
+    LDAP_AUTH_FAILURE_TESTED=true
+}
 
 echo
 echo "=== Flow 1: EXT → INT Message Flow (with LDAP) ==="
@@ -340,7 +360,10 @@ echo "Path: EXT Client → EXT-SMTS → Corporate API → ArtemisMQ → INT-SMTS
 echo
 
 echo "2.1. Sending message to EXT SMTS with LDAP auth (Flow 1)..."
-send_to_ext_smts || {
+send_to_ext_smts && {
+    EXT_SEND_SUCCESS=true
+    LDAP_AUTH_SUCCESS=true
+} || {
     echo "❌ Failed to send message to EXT SMTS with LDAP auth"
     exit 1
 }
@@ -350,7 +373,9 @@ echo "   Checking INT SMTS message API with LDAP auth..."
 echo "   Waiting for message to flow through Corporate API and ArtemisMQ..."
 sleep 5
 
-check_received_messages "int" "$TOPIC_MONTERRA" "INT SMTS messages from EXT" || {
+check_received_messages "int" "$TOPIC_MONTERRA" "INT SMTS messages from EXT" && {
+    EXT_TO_INT_FLOW_SUCCESS=true
+} || {
     echo "⚠️  No messages found in INT SMTS"
     echo "   This might be because:"
     echo "   - The Corporate API is not forwarding messages to ArtemisMQ"
@@ -365,7 +390,10 @@ echo "Path: INT Client → INT-SMTS → DLP → ArtemisMQ → Corporate API → 
 echo
 
 echo "2.1. Sending message to INT SMTS with LDAP auth (Flow 2)..."
-send_to_int_smts || {
+send_to_int_smts && {
+    INT_SEND_SUCCESS=true
+    LDAP_AUTH_SUCCESS=true
+} || {
     echo "❌ Failed to send message to INT SMTS with LDAP auth"
     exit 1
 }
@@ -376,7 +404,9 @@ echo "   Checking EXT SMTS message API with LDAP auth..."
 echo "   Waiting for message to flow through ArtemisMQ and Corporate API..."
 sleep 5
 
-check_received_messages "ext" "$TOPIC_MONTERRA" "EXT SMTS messages from INT" || {
+check_received_messages "ext" "$TOPIC_MONTERRA" "EXT SMTS messages from INT" && {
+    INT_TO_EXT_FLOW_SUCCESS=true
+} || {
     echo "⚠️  No messages found in EXT SMTS"
     echo "   This might be because:"
     echo "   - INT-SMTS is not pushing messages to ArtemisMQ"
@@ -385,6 +415,18 @@ check_received_messages "ext" "$TOPIC_MONTERRA" "EXT SMTS messages from INT" || 
 }
 
 echo "=== Test Complete ==="
+echo
+echo "=== Test Summary ==="
+echo "Test Results:"
+echo "  ✅ Services Health Check: $([ "$SERVICES_HEALTHY" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ LDAP Auth Failure Test: $([ "$LDAP_AUTH_FAILURE_TESTED" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ LDAP Auth Success: $([ "$LDAP_AUTH_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ EXT SMTS Send: $([ "$EXT_SEND_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ INT SMTS Send: $([ "$INT_SEND_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ EXT → INT Flow: $([ "$EXT_TO_INT_FLOW_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ INT → EXT Flow: $([ "$INT_TO_EXT_FLOW_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
+echo
+echo "Overall Status: $([ "$EXT_SEND_SUCCESS" = true ] && [ "$INT_SEND_SUCCESS" = true ] && [ "$SERVICES_HEALTHY" = true ] && [ "$LDAP_AUTH_SUCCESS" = true ] && echo "✅ ALL TESTS PASSED" || echo "❌ SOME TESTS FAILED")"
 echo
 echo "=== Summary of Ready-to-use Curl Commands with LDAP ==="
 echo
