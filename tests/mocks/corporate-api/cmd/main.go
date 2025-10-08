@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -18,6 +19,8 @@ type CorporateAPI struct {
 	artemisURL string
 	queueName  string
 	flow2QueueName string
+	ldapUsername string
+	ldapPassword string
 }
 
 type Message struct {
@@ -29,7 +32,7 @@ type Message struct {
 	Body      json.RawMessage   `json:"body"`
 }
 
-func NewCorporateAPI(artemisURL, extSMTSURL, queueName string) (*CorporateAPI, error) {
+func NewCorporateAPI(artemisURL, extSMTSURL, queueName, ldapUsername, ldapPassword string) (*CorporateAPI, error) {
 	// Connect to ArtemisMQ
 	conn, err := stomp.Dial("tcp", artemisURL,
 		stomp.ConnOpt.Login("artemis", "artemis"),
@@ -44,6 +47,8 @@ func NewCorporateAPI(artemisURL, extSMTSURL, queueName string) (*CorporateAPI, e
 		artemisURL:     artemisURL,
 		queueName:      queueName,
 		flow2QueueName: "SMTS_EXT_TEST_QUEUE", // Different queue for Flow 2
+		ldapUsername:   ldapUsername,
+		ldapPassword:   ldapPassword,
 	}, nil
 }
 
@@ -210,6 +215,11 @@ func (api *CorporateAPI) processArtemisMessage(msg *stomp.Message) error {
 	req.Header.Set("X-SMTS-Message-ID", message.ID)
 	req.Header.Set("X-SMTS-Timestamp", message.Timestamp)
 	req.Header.Set("X-SMTS-Source", "corporate-api") // Mark as from corporate API for Flow 2
+	
+	// Add LDAP Basic Auth header
+	auth := api.ldapUsername + ":" + api.ldapPassword
+	basicAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+	req.Header.Set("Authorization", basicAuth)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -244,13 +254,24 @@ func main() {
 		queueName = "SMTS_INT_TEST_QUEUE"
 	}
 
+	// LDAP authentication for EXT-SMTS
+	ldapUsername := os.Getenv("LDAP_USERNAME")
+	if ldapUsername == "" {
+		ldapUsername = "testuser" // Default test user
+	}
+
+	ldapPassword := os.Getenv("LDAP_PASSWORD")
+	if ldapPassword == "" {
+		ldapPassword = "testpass" // Default test password
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
 	// Initialize corporate API
-	api, err := NewCorporateAPI(artemisURL, extSMTSURL, queueName)
+	api, err := NewCorporateAPI(artemisURL, extSMTSURL, queueName, ldapUsername, ldapPassword)
 	if err != nil {
 		log.Fatalf("Failed to initialize corporate API: %v", err)
 	}

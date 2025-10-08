@@ -107,11 +107,12 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Check topic authorization if LDAP is enabled
-	if m.ldapMiddleware != nil && !m.ldapMiddleware.AuthorizeTopic(r, topic) {
-		m.logger.Warn("Topic authorization denied",
-			zap.String("topic", topic))
-		http.Error(w, `{"error": "Access denied to requested topic"}`, http.StatusForbidden)
+	// Check LDAP authorization for reading messages
+	if m.ldapMiddleware != nil && !m.ldapMiddleware.AuthorizeEndpoint(r, m.config.Deployment.Type, "read") {
+		m.logger.Warn("LDAP authorization denied for read endpoint",
+			zap.String("topic", topic),
+			zap.String("deployment", m.config.Deployment.Type))
+		http.Error(w, `{"error": "Access denied - insufficient permissions"}`, http.StatusForbidden)
 		return
 	}
 

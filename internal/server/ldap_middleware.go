@@ -194,6 +194,79 @@ func (lm *LDAPMiddleware) AuthorizeTopic(r *http.Request, topic string) bool {
 	return false
 }
 
+// AuthorizeEndpoint checks if the user is authorized to access the specific endpoint
+// based on LDAP group membership and deployment type
+func (lm *LDAPMiddleware) AuthorizeEndpoint(r *http.Request, deploymentType string, endpointType string) bool {
+	// If LDAP is not enabled, allow all access
+	if !lm.enabled {
+		return true
+	}
+
+	// Get user info from context
+	userInfo, groups := userInfoFromContext(r.Context())
+	if userInfo == nil {
+		lm.logger.Warn("No user info found in context for endpoint authorization")
+		return false
+	}
+
+	username := userInfo["uid"]
+	if username == "" {
+		username = "unknown"
+	}
+
+	// Define required groups based on deployment type and endpoint
+	requiredGroups := lm.getRequiredGroups(deploymentType, endpointType)
+
+	// Check if user has any of the required groups
+	for _, group := range groups {
+		for _, requiredGroup := range requiredGroups {
+			if group == requiredGroup {
+				lm.logger.Debug("Endpoint authorization granted",
+					zap.String("username", username),
+					zap.String("deployment", deploymentType),
+					zap.String("endpoint", endpointType),
+					zap.String("group", group))
+				return true
+			}
+		}
+	}
+
+	lm.logger.Warn("Endpoint authorization denied",
+		zap.String("username", username),
+		zap.String("deployment", deploymentType),
+		zap.String("endpoint", endpointType),
+		zap.Strings("user_groups", groups),
+		zap.Strings("required_groups", requiredGroups))
+	return false
+}
+
+// getRequiredGroups returns the required LDAP groups for a given deployment and endpoint
+func (lm *LDAPMiddleware) getRequiredGroups(deploymentType string, endpointType string) []string {
+	switch deploymentType {
+	case "ext":
+		switch endpointType {
+		case "send":
+			return []string{"ext_writer", "admin"}
+		case "read":
+			return []string{"ext_reader", "admin"}
+		case "corp_message":
+			return []string{"ext_writer", "admin"}
+		}
+	case "int":
+		switch endpointType {
+		case "send":
+			return []string{"int_writer", "admin"}
+		case "read":
+			return []string{"int_reader", "admin"}
+		case "corp_message":
+			return []string{"int_writer", "admin"}
+		}
+	}
+
+	// Default: require at least one group for any access
+	return []string{"ext_writer", "ext_reader", "int_writer", "int_reader", "admin"}
+}
+
 // Close closes the LDAP connection
 func (lm *LDAPMiddleware) Close() {
 	if lm.ldapClient != nil {

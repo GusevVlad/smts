@@ -30,6 +30,8 @@ services:
       - EXT_SMTS_URL=http://smts-ext-test:18082
       - ARTEMIS_QUEUE=SMTS_INT_TEST_QUEUE
       - PORT=8080
+      - LDAP_USERNAME=testuser
+      - LDAP_PASSWORD=testpass
     depends_on:
       artemis-test:
         condition: service_healthy

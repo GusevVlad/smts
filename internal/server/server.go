@@ -36,6 +36,7 @@ type Server struct {
 	messageAPIServer *MessageAPIServer
 	publisher       *nats.Publisher
 	httpServer      *http.Server
+	ldapMiddleware  *LDAPMiddleware
 	running         bool
 }
 
@@ -116,6 +117,9 @@ func NewServer(configPath string) (*Server, error) {
 	messageAPIServer := NewMessageAPIServer(cfg, logger)
 	messageAPIServer.SetNATSClient(natsClient)
 
+	// Create LDAP middleware for main server
+	ldapMiddleware := NewLDAPMiddleware(&cfg.LDAP, logger)
+
 	server := &Server{
 		config:          cfg,
 		logger:          logger,
@@ -128,6 +132,7 @@ func NewServer(configPath string) (*Server, error) {
 		publisher:       publisher,
 		healthServer:    healthServer,
 		messageAPIServer: messageAPIServer,
+		ldapMiddleware:  ldapMiddleware,
 	}
 
 	return server, nil
@@ -239,6 +244,11 @@ func (s *Server) Stop() error {
 		}
 	}
 
+	// Close LDAP connection
+	if s.ldapMiddleware != nil {
+		s.ldapMiddleware.Close()
+	}
+
 	// Close NATS client
 	if s.natsClient != nil {
 		s.natsClient.Close()
@@ -315,11 +325,11 @@ func (s *Server) GetLogger() *zap.Logger {
 func (s *Server) startHTTPServer() error {
 	mux := http.NewServeMux()
 	
-	// Add message handler for /send/{topic} endpoint (Flow 1: EXT → INT)
-	mux.HandleFunc("/send/", s.messageHandler)
+	// Apply LDAP authentication to message sending endpoints
+	mux.HandleFunc("/send/", s.ldapMiddleware.Authenticate(s.messageHandler))
 	
-	// Add corporate message handler for /corp_message/{topic} endpoint (Flow 2: INT → EXT)
-	mux.HandleFunc("/corp_message/", s.corporateMessageHandler)
+	// Apply LDAP authentication to corporate message endpoints
+	mux.HandleFunc("/corp_message/", s.ldapMiddleware.Authenticate(s.corporateMessageHandler))
 	
 	// Use a different port for HTTP server (health port + 1)
 	port := s.config.Health.Port + 1
@@ -360,6 +370,15 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 	topic := strings.TrimPrefix(r.URL.Path, "/send/")
 	if topic == "" {
 		http.Error(w, `{"error": "Topic is required in URL path"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Check LDAP authorization for sending messages
+	if s.ldapMiddleware != nil && !s.ldapMiddleware.AuthorizeEndpoint(r, s.config.Deployment.Type, "send") {
+		s.logger.Warn("LDAP authorization denied for send endpoint",
+			zap.String("topic", topic),
+			zap.String("deployment", s.config.Deployment.Type))
+		http.Error(w, `{"error": "Access denied - insufficient permissions"}`, http.StatusForbidden)
 		return
 	}
 
@@ -484,6 +503,15 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 	topic := strings.TrimPrefix(r.URL.Path, "/corp_message/")
 	if topic == "" {
 		http.Error(w, `{"error": "Topic is required in URL path"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Check LDAP authorization for corporate message endpoint
+	if s.ldapMiddleware != nil && !s.ldapMiddleware.AuthorizeEndpoint(r, s.config.Deployment.Type, "corp_message") {
+		s.logger.Warn("LDAP authorization denied for corp_message endpoint",
+			zap.String("topic", topic),
+			zap.String("deployment", s.config.Deployment.Type))
+		http.Error(w, `{"error": "Access denied - insufficient permissions"}`, http.StatusForbidden)
 		return
 	}
 
