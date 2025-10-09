@@ -83,8 +83,12 @@ type ArtemisConfig struct {
 
 // AuthConfig contains authentication settings
 type AuthConfig struct {
-	Type   string `mapstructure:"type" yaml:"type"` // "api_key"
-	APIKey string `mapstructure:"api_key" yaml:"api_key"`
+	Type        string `mapstructure:"type" yaml:"type"` // "api_key", "client_credentials"
+	APIKey      string `mapstructure:"api_key" yaml:"api_key"`
+	ClientID    string `mapstructure:"client_id" yaml:"client_id"`
+	ClientSecret string `mapstructure:"client_secret" yaml:"client_secret"`
+	TokenURL    string `mapstructure:"token_url" yaml:"token_url"`
+	Scopes      string `mapstructure:"scopes" yaml:"scopes"`
 }
 
 // RetryConfig contains retry settings for external calls

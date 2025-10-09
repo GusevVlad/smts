@@ -163,6 +163,17 @@ func (l *Loader) ValidateConfig(config *types.Config) error {
 	if config.API.Auth.Type == "api_key" && config.API.Auth.APIKey == "" {
 		return types.NewSMTSError(types.ErrConfigValidate, "API key is required for API authentication")
 	}
+	if config.API.Auth.Type == "client_credentials" {
+		if config.API.Auth.ClientID == "" {
+			return types.NewSMTSError(types.ErrConfigValidate, "Client ID is required for client credentials authentication")
+		}
+		if config.API.Auth.ClientSecret == "" {
+			return types.NewSMTSError(types.ErrConfigValidate, "Client secret is required for client credentials authentication")
+		}
+		if config.API.Auth.TokenURL == "" {
+			return types.NewSMTSError(types.ErrConfigValidate, "Token URL is required for client credentials authentication")
+		}
+	}
 
 	// Validate DLP configuration for INT deployment
 	if config.Deployment.Type == "int" && config.DLP.Enabled {

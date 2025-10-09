@@ -27,8 +27,12 @@ api:
     max_attempts: 3
     backoff: "2s"
   auth:
-    type: "api_key"
-    api_key: "${API_KEY}"
+    type: "client_credentials"  # Options: "api_key", "client_credentials"
+    api_key: "${API_KEY}"  # Used when type is "api_key"
+    client_id: "${CLIENT_ID}"  # Used when type is "client_credentials"
+    client_secret: "${CLIENT_SECRET}"  # Used when type is "client_credentials"
+    token_url: "${TOKEN_URL}"  # Used when type is "client_credentials"
+    scopes: "api"  # Optional scopes for client credentials
 
 logging:
   level: "info"

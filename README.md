@@ -232,8 +232,44 @@ export ARTEMIS_PASSWORD=artemis_password
 #### Configuration Files
 
 - `configs/ext-config.yaml` - EXT network configuration
-- `configs/int-config.yaml` - INT network configuration  
+- `configs/int-config.yaml` - INT network configuration
 - `configs/topics.yaml` - Topics and privileges configuration
+
+### Authentication Methods
+
+SMTS supports multiple authentication methods for corporate API integration:
+
+#### API Key Authentication
+```yaml
+api:
+  auth:
+    type: "api_key"
+    api_key: "${API_KEY}"
+```
+
+#### OAuth2 Client Credentials
+```yaml
+api:
+  auth:
+    type: "client_credentials"
+    client_id: "${CLIENT_ID}"
+    client_secret: "${CLIENT_SECRET}"
+    token_url: "${TOKEN_URL}"
+    scopes: "api"  # Optional
+```
+
+**Environment Variables for Client Credentials:**
+```bash
+export CLIENT_ID=your_client_id
+export CLIENT_SECRET=your_client_secret
+export TOKEN_URL=https://auth.corporate.com/oauth/token
+```
+
+**Features:**
+- Automatic token caching and refresh
+- Token expiration handling with 30-second buffer
+- Concurrent request safety with mutex locks
+- Automatic retry on token refresh failures
 
 ### Running the Service
 
@@ -278,8 +314,12 @@ api:
   base_url: "https://api.corporate.com"
   timeout: "30s"
   auth:
-    type: "api_key"
-    api_key: "${API_KEY}"
+    type: "api_key"  # Options: "api_key", "client_credentials"
+    api_key: "${API_KEY}"  # Used when type is "api_key"
+    client_id: "${CLIENT_ID}"  # Used when type is "client_credentials"
+    client_secret: "${CLIENT_SECRET}"  # Used when type is "client_credentials"
+    token_url: "${TOKEN_URL}"  # Used when type is "client_credentials"
+    scopes: "api"  # Optional scopes for client credentials
 
 dlp: # int only
   enabled: true

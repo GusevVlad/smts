@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-stomp/stomp"
@@ -59,6 +60,11 @@ func (api *CorporateAPI) HandleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
+	if r.URL.Path == "/oauth/token" {
+		api.HandleToken(w, r)
+		return
+	}
+	
 	// Handle topic-specific endpoints for Flow 1
 	if r.Method == http.MethodPost && r.URL.Path != "/" {
 		api.HandleMessageFromEXT(w, r)
@@ -72,6 +78,12 @@ func (api *CorporateAPI) HandleRoot(w http.ResponseWriter, r *http.Request) {
 // HandleMessageFromEXT handles messages from EXT-SMTS (Flow 1)
 func (api *CorporateAPI) HandleMessageFromEXT(w http.ResponseWriter, r *http.Request) {
 	topic := r.URL.Path[1:] // Remove leading slash
+
+	// Authenticate request
+	if !api.authenticateRequest(r) {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
 
 	// Read message body
 	var body json.RawMessage
@@ -149,6 +161,70 @@ func (api *CorporateAPI) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		"service":   "corporate-api",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+// HandleToken handles OAuth2 token requests
+func (api *CorporateAPI) HandleToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse form data
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error": "Invalid form data"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate grant type
+	grantType := r.FormValue("grant_type")
+	if grantType != "client_credentials" {
+		http.Error(w, `{"error": "unsupported_grant_type"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate client credentials
+	clientID := r.FormValue("client_id")
+	clientSecret := r.FormValue("client_secret")
+
+	if clientID != "test-client-id" || clientSecret != "test-client-secret" {
+		http.Error(w, `{"error": "invalid_client"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Generate token response
+	tokenResponse := map[string]interface{}{
+		"access_token": "test-access-token-" + time.Now().UTC().Format("20060102150405"),
+		"token_type":   "Bearer",
+		"expires_in":   3600,
+		"scope":        r.FormValue("scope"),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(tokenResponse)
+}
+
+// authenticateRequest authenticates incoming requests using API key or Bearer token
+func (api *CorporateAPI) authenticateRequest(r *http.Request) bool {
+	// Check for API key
+	apiKey := r.Header.Get("X-API-Key")
+	if apiKey == "test-api-key" {
+		return true
+	}
+
+	// Check for Bearer token
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" {
+		// Simple Bearer token validation - in real implementation, this would validate JWT
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token := strings.TrimPrefix(authHeader, "Bearer ")
+			// For testing, accept any token that starts with "test-access-token-"
+			return strings.HasPrefix(token, "test-access-token-")
+		}
+	}
+
+	return false
 }
 
 // StartMessageConsumer starts consuming messages from ArtemisMQ for Flow 2 (INT→EXT)

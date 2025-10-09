@@ -22,11 +22,12 @@ type APIClient interface {
 
 // Client represents a corporate API client
 type Client struct {
-	client    *resty.Client
-	apiConfig *types.APIConfig
-	dlpConfig *types.DLPConfig
-	logger    *zap.Logger
-	baseURL   string
+	client      *resty.Client
+	apiConfig   *types.APIConfig
+	dlpConfig   *types.DLPConfig
+	logger      *zap.Logger
+	baseURL     string
+	tokenManager *TokenManager
 }
 
 // NewClient creates a new corporate API client
@@ -38,13 +39,38 @@ func NewClient(apiConfig *types.APIConfig, dlpConfig *types.DLPConfig, logger *z
 
 	// Note: Authentication headers are set per-request to avoid conflicts
 
-	return &Client{
-		client:    client,
-		apiConfig: apiConfig,
-		dlpConfig: dlpConfig,
-		logger:    logger,
-		baseURL:   apiConfig.BaseURL,
+	var tokenManager *TokenManager
+	if apiConfig.Auth.Type == "client_credentials" {
+		tokenManager = NewTokenManager(&apiConfig.Auth, logger)
 	}
+
+	return &Client{
+		client:      client,
+		apiConfig:   apiConfig,
+		dlpConfig:   dlpConfig,
+		logger:      logger,
+		baseURL:     apiConfig.BaseURL,
+		tokenManager: tokenManager,
+	}
+}
+
+// setAuthHeaders sets the appropriate authentication headers for the request
+func (c *Client) setAuthHeaders(ctx context.Context, request *resty.Request) error {
+	switch c.apiConfig.Auth.Type {
+	case "api_key":
+		if c.apiConfig.Auth.APIKey != "" {
+			request.SetHeader("X-API-Key", c.apiConfig.Auth.APIKey)
+		}
+	case "client_credentials":
+		if c.tokenManager != nil {
+			token, err := c.tokenManager.GetToken(ctx)
+			if err != nil {
+				return types.WrapSMTSError(err, types.ErrAPIAuth, "Failed to get access token")
+			}
+			request.SetAuthToken(token)
+		}
+	}
+	return nil
 }
 
 // DeliverMessage delivers a message to the corporate API
@@ -75,9 +101,14 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 		SetBody(msg.Body).
 		SetHeader("Content-Type", "application/json")
 
-	// Add API key header if configured
-	if c.apiConfig.Auth.Type == "api_key" && c.apiConfig.Auth.APIKey != "" {
-		request.SetHeader("X-API-Key", c.apiConfig.Auth.APIKey)
+	// Set authentication headers
+	if err := c.setAuthHeaders(ctx, request); err != nil {
+		return &types.DeliveryResult{
+			Success:    false,
+			MessageID:  msg.ID,
+			Timestamp:  time.Now().UTC(),
+			Error:      err.Error(),
+		}, err
 	}
 
 	// Add SMTS headers
@@ -221,9 +252,9 @@ func (c *Client) ValidateMessage(ctx context.Context, msg *types.Message) (*type
 		SetBody(dlpRequest).
 		SetHeader("Content-Type", "application/json")
 
-	// Add API key header if configured
-	if c.apiConfig.Auth.Type == "api_key" && c.apiConfig.Auth.APIKey != "" {
-		request.SetHeader("X-API-Key", c.apiConfig.Auth.APIKey)
+	// Set authentication headers
+	if err := c.setAuthHeaders(ctx, request); err != nil {
+		return nil, err
 	}
 
 	// Execute the request with retry
@@ -333,9 +364,9 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 	request := c.client.R().
 		SetContext(ctx)
 
-	// Add API key header if configured
-	if c.apiConfig.Auth.Type == "api_key" && c.apiConfig.Auth.APIKey != "" {
-		request.SetHeader("X-API-Key", c.apiConfig.Auth.APIKey)
+	// Set authentication headers
+	if err := c.setAuthHeaders(ctx, request); err != nil {
+		return err
 	}
 
 	resp, err := request.Get(endpoint)
