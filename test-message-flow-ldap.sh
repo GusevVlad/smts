@@ -56,44 +56,33 @@ send_to_ext_smts() {
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     
     local payload=$(cat <<EOF
-{
-  "event_type": "dora_metrics_update",
-  "project_id": "project-$(openssl rand -hex 4)",
-  "project_name": "Monterra Platform",
-  "timestamp": "$timestamp",
-  "metrics": {
-    "deployment_frequency": {
-      "value": 12.5,
-      "unit": "deployments/week",
-      "trend": "improving"
+{  
+  "env": "INT",
+  "app_name": "zp-eco",
+  "app_version": "1.0.1",
+  "auto_system": "OMNIP",
+  "metrics": [
+    {
+      "metric": "coverage",
+      "value": "80.3"
     },
-    "lead_time_for_changes": {
-      "value": 3.2,
-      "unit": "days",
-      "trend": "stable"
+    {
+      "metric": "uncovered conditions",
+      "value": "60"
+    },     {
+      "metric": "specification exist",
+      "value": "true"
     },
-    "mean_time_to_restore": {
-      "value": 2.1,
-      "unit": "hours",
-      "trend": "improving"
-    },
-    "change_failure_rate": {
-      "value": 8.5,
-      "unit": "percent",
-      "trend": "stable"
+    {
+      "metric": "specification correct",
+      "value": "false"
     }
-  },
-  "period": {
-    "start": "$(date -u -v-7d +%Y-%m-%dT%H:%M:%SZ)",
-    "end": "$timestamp"
-  },
-  "team_size": 15,
-  "environment": "production",
-  "source": "external-monitoring"
+  ],
+  "report_date": "$timestamp",
+  "report_type": "unit coverage"
 }
 EOF
 )
-
     echo "=== Ready-to-use curl command for EXT SMTS (with LDAP) ==="
     echo "curl -X POST \"$API_BASE_URL_EXT/send/$TOPIC_MONTERRA\" \\"
     echo "  -H \"Content-Type: application/json\" \\"
@@ -141,35 +130,28 @@ send_to_int_smts() {
     
     local payload=$(cat <<EOF
 {
-  "event_type": "dora_metrics_update",
-  "system_id": "system-$(openssl rand -hex 4)",
-  "system_name": "Internal Monitoring System",
-  "timestamp": "$timestamp",
-  "metrics": {
-    "deployment_frequency": {
-      "value": 15.2,
-      "unit": "deployments/week",
-      "trend": "improving"
+  "env": "EXT",
+  "app_version": "1.0.1",
+  "auto_system": "OMNIP",
+  "metrics": [
+    {
+      "metric": "coverage",
+      "value": "80.3"
     },
-    "lead_time_for_changes": {
-      "value": 2.8,
-      "unit": "days",
-      "trend": "improving"
+    {
+      "metric": "uncovered conditions",
+      "value": "60"
+    },     {
+      "metric": "specification exist",
+      "value": "true"
     },
-    "mean_time_to_restore": {
-      "value": 1.5,
-      "unit": "hours",
-      "trend": "stable"
-    },
-    "change_failure_rate": {
-      "value": 6.2,
-      "unit": "percent",
-      "trend": "improving"
+    {
+      "metric": "specification correct",
+      "value": "false"
     }
-  },
-  "status": "healthy",
-  "environment": "production",
-  "source": "internal-monitoring"
+  ],
+  "report_date": "$timestamp",
+  "report_type": "unit coverage"
 }
 EOF
 )
@@ -416,21 +398,9 @@ check_received_messages "ext" "$TOPIC_MONTERRA" "EXT SMTS messages from INT" && 
 
 echo "=== Test Complete ==="
 echo
-echo "=== Test Summary ==="
-echo "Test Results:"
-echo "  ✅ Services Health Check: $([ "$SERVICES_HEALTHY" = true ] && echo "PASS" || echo "FAIL")"
-echo "  ✅ LDAP Auth Failure Test: $([ "$LDAP_AUTH_FAILURE_TESTED" = true ] && echo "PASS" || echo "FAIL")"
-echo "  ✅ LDAP Auth Success: $([ "$LDAP_AUTH_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
-echo "  ✅ EXT SMTS Send: $([ "$EXT_SEND_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
-echo "  ✅ INT SMTS Send: $([ "$INT_SEND_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
-echo "  ✅ EXT → INT Flow: $([ "$EXT_TO_INT_FLOW_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
-echo "  ✅ INT → EXT Flow: $([ "$INT_TO_EXT_FLOW_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
-echo
-echo "Overall Status: $([ "$EXT_SEND_SUCCESS" = true ] && [ "$INT_SEND_SUCCESS" = true ] && [ "$SERVICES_HEALTHY" = true ] && [ "$LDAP_AUTH_SUCCESS" = true ] && echo "✅ ALL TESTS PASSED" || echo "❌ SOME TESTS FAILED")"
-echo
 echo "=== Summary of Ready-to-use Curl Commands with LDAP ==="
 echo
-echo "1. Send message to EXT SMTS (with LDAP):"
+echo "1. Send message to EXT SMTS (with LDAP) - IDENTICAL to above:"
 echo "   curl -X POST \"$API_BASE_URL_EXT/send/$TOPIC_MONTERRA\" \\"
 echo "     -H \"Content-Type: application/json\" \\"
 echo "     -H \"Authorization: $LDAP_AUTH_HEADER\" \\"
@@ -439,9 +409,9 @@ echo "     -H \"X-SMTS-Message-ID: \$(date +%Y%m%d%H%M%S)-\$(openssl rand -hex 4
 echo "     -H \"X-SMTS-Timestamp: \$(date -u +%Y-%m-%dT%H:%M:%SZ)\" \\"
 echo "     -H \"X-SMTS-Source: ext-client\" \\"
 echo "     -H \"smts-role: ext_writer\" \\"
-echo "     -d '{\"event_type\":\"dora_metrics_update\",\"project_id\":\"project-\$(openssl rand -hex 4)\",\"timestamp\":\"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}'"
+echo "     -d '{\"env\":\"INT\",\"app_name\":\"zp-eco\",\"app_version\":\"1.0.1\",\"auto_system\":\"OMNIP\",\"metrics\":[{\"metric\":\"coverage\",\"value\":\"80.3\"},{\"metric\":\"uncovered conditions\",\"value\":\"60\"},{\"metric\":\"specification exist\",\"value\":\"true\"},{\"metric\":\"specification correct\",\"value\":\"false\"}],\"report_date\":\"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"report_type\":\"unit coverage\"}'"
 echo
-echo "2. Send message to INT SMTS (with LDAP):"
+echo "2. Send message to INT SMTS (with LDAP) - IDENTICAL to above:"
 echo "   curl -X POST \"$API_BASE_URL_INT/send/$TOPIC_MONTERRA\" \\"
 echo "     -H \"Content-Type: application/json\" \\"
 echo "     -H \"Authorization: $LDAP_AUTH_HEADER\" \\"
@@ -450,16 +420,16 @@ echo "     -H \"X-SMTS-Message-ID: \$(date +%Y%m%d%H%M%S)-\$(openssl rand -hex 4
 echo "     -H \"X-SMTS-Timestamp: \$(date -u +%Y-%m-%dT%H:%M:%SZ)\" \\"
 echo "     -H \"X-SMTS-Source: int-client\" \\"
 echo "     -H \"smts-role: int_writer\" \\"
-echo "     -d '{\"event_type\":\"dora_metrics_update\",\"system_id\":\"system-\$(openssl rand -hex 4)\",\"timestamp\":\"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}'"
+echo "     -d '{\"env\":\"EXT\",\"app_version\":\"1.0.1\",\"auto_system\":\"OMNIP\",\"metrics\":[{\"metric\":\"coverage\",\"value\":\"80.3\"},{\"metric\":\"uncovered conditions\",\"value\":\"60\"},{\"metric\":\"specification exist\",\"value\":\"true\"},{\"metric\":\"specification correct\",\"value\":\"false\"}],\"report_date\":\"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"report_type\":\"unit coverage\"}'"
 echo
-echo "3. Check messages in EXT SMTS (with LDAP):"
+echo "3. Check messages in EXT SMTS (with LDAP) - IDENTICAL to above:"
 echo "   curl -X GET \"$MESSAGE_API_EXT/messages?topic=$TOPIC_MONTERRA&count=1\" \\"
 echo "     -H \"Content-Type: application/json\" \\"
 echo "     -H \"Authorization: $LDAP_AUTH_HEADER\" \\"
 echo "     -H \"X-API-Key: $API_KEY\" \\"
 echo "     -H \"smts-role: ext_reader\""
 echo
-echo "4. Check messages in INT SMTS (with LDAP):"
+echo "4. Check messages in INT SMTS (with LDAP) - IDENTICAL to above:"
 echo "   curl -X GET \"$MESSAGE_API_INT/messages?topic=$TOPIC_MONTERRA&count=1\" \\"
 echo "     -H \"Content-Type: application/json\" \\"
 echo "     -H \"Authorization: $LDAP_AUTH_HEADER\" \\"
@@ -472,3 +442,15 @@ echo "- Set ldap.enabled: true in both configuration files"
 echo "- Configure LDAP server details in the configuration files"
 echo "- This script uses test credentials: $LDAP_USERNAME:$LDAP_PASSWORD"
 echo "- For production, use real LDAP credentials and secure configuration"
+echo
+echo "=== Test Summary ==="
+echo "Test Results:"
+echo "  ✅ Services Health Check: $([ "$SERVICES_HEALTHY" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ LDAP Auth Failure Test: $([ "$LDAP_AUTH_FAILURE_TESTED" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ LDAP Auth Success: $([ "$LDAP_AUTH_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ EXT SMTS Send: $([ "$EXT_SEND_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ INT SMTS Send: $([ "$INT_SEND_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ EXT → INT Flow: $([ "$EXT_TO_INT_FLOW_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ INT → EXT Flow: $([ "$INT_TO_EXT_FLOW_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
+echo
+echo "Overall Status: $([ "$EXT_SEND_SUCCESS" = true ] && [ "$INT_SEND_SUCCESS" = true ] && [ "$SERVICES_HEALTHY" = true ] && [ "$LDAP_AUTH_SUCCESS" = true ] && echo "✅ ALL TESTS PASSED" || echo "❌ SOME TESTS FAILED")"

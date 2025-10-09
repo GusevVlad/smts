@@ -11,23 +11,24 @@ import (
 
 	"smts/internal/nats"
 	"smts/pkg/types"
+
 	natsio "github.com/nats-io/nats.go"
 	"go.uber.org/zap"
 )
 
 // MessageAPIServer handles message operations
 type MessageAPIServer struct {
-	config     *types.Config
-	logger     *zap.Logger
-	server     *http.Server
-	natsClient *nats.Client
+	config         *types.Config
+	logger         *zap.Logger
+	server         *http.Server
+	natsClient     *nats.Client
 	ldapMiddleware *LDAPMiddleware
 }
 
 // NewMessageAPIServer creates a new message API server
 func NewMessageAPIServer(config *types.Config, logger *zap.Logger) *MessageAPIServer {
 	ldapMiddleware := NewLDAPMiddleware(&config.LDAP, logger)
-	
+
 	return &MessageAPIServer{
 		config:         config,
 		logger:         logger,
@@ -43,7 +44,7 @@ func (m *MessageAPIServer) SetNATSClient(client *nats.Client) {
 // Start starts the message API server
 func (m *MessageAPIServer) Start() error {
 	mux := http.NewServeMux()
-	
+
 	// Apply LDAP authentication to message endpoints
 	mux.HandleFunc("/messages", m.ldapMiddleware.Authenticate(m.messagesHandler))
 	mux.HandleFunc("/send", m.ldapMiddleware.Authenticate(m.sendHandler))
@@ -101,7 +102,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	// Parse query parameters
 	topic := r.URL.Query().Get("topic")
 	countStr := r.URL.Query().Get("count")
-	
+
 	if topic == "" {
 		http.Error(w, `{"error": "topic parameter is required"}`, http.StatusBadRequest)
 		return
@@ -133,7 +134,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	// Check if NATS client is available
 	if m.natsClient == nil {
 		m.logger.Error("NATS client not available for message API")
@@ -156,7 +157,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	// Use the external consumer for reading incoming INT messages
 	consumerName := m.config.NATS.ExternalConsumer.DurableName
 	streamName := m.config.NATS.ExternalStream.Name
-	
+
 	// Check if the consumer exists
 	_, err := js.ConsumerInfo(streamName, consumerName)
 	if err != nil {
@@ -192,7 +193,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	// Process fetched messages
 	for _, msg := range fetchedMsgs {
 		received++
-		
+
 		// Parse message headers
 		headers := make(map[string]string)
 		if msg.Header != nil {
@@ -208,18 +209,33 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 		if strings.HasPrefix(topic, "external.") {
 			originalTopic = strings.TrimPrefix(topic, "external.")
 		}
-		
+
+		// Extract actual content from the message structure
+		var msgData map[string]interface{}
+		var actualBody interface{}
+		if err := json.Unmarshal(msg.Data, &msgData); err == nil {
+			// If we can parse as a map, extract the body field
+			if bodyField, exists := msgData["body"]; exists {
+				actualBody = bodyField
+			} else {
+				// If no body field, use the raw data
+				actualBody = string(msg.Data)
+			}
+		} else {
+			// If parsing fails, use the raw data
+			actualBody = string(msg.Data)
+		}
+
 		messageData := map[string]interface{}{
 			"id":        headers["X-SMTS-Message-ID"],
 			"topic":     originalTopic,
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
-			"source":    headers["X-SMTS-Source"],
 			"headers":   headers,
-			"body":      json.RawMessage(msg.Data),
+			"body":      actualBody,
 		}
 
 		messages = append(messages, messageData)
-		
+
 		// Acknowledge the message
 		if err := msg.Ack(); err != nil {
 			m.logger.Warn("Failed to acknowledge message", zap.Error(err))
@@ -276,10 +292,10 @@ func (m *MessageAPIServer) sendHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"status":    "sent",
+		"status":     "sent",
 		"message_id": fmt.Sprintf("sent-%s", time.Now().UTC().Format("20060102150405")),
-		"topic":     request.Topic,
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"topic":      request.Topic,
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
 		"deployment": m.config.Deployment.Type,
 	}
 
@@ -287,3 +303,4 @@ func (m *MessageAPIServer) sendHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
 }
+

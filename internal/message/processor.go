@@ -201,13 +201,14 @@ func (p *Processor) processEXTMessageFromCorporateAPI(ctx context.Context, msg *
 	// Flow 2: Message from corporate API (via ArtemisMQ) - store in external NATS stream for external clients
 	
 	// Create a copy of the message with the correct subject for external stream
+	// Store only the actual content in the body to avoid duplication
 	externalMsg := &types.Message{
 		ID:        msg.ID,
 		Timestamp: msg.Timestamp,
 		Topic:     "external." + msg.Topic,  // Use external subject pattern
 		Source:    msg.Source,
 		Headers:   msg.Headers,
-		Body:      msg.Body,
+		Body:      msg.Body,  // Store only the actual content, not the full message structure
 	}
 	
 	// Store message in external NATS stream for external clients to consume via REST API
@@ -239,13 +240,14 @@ func (p *Processor) processINTMessageFromArtemis(ctx context.Context, msg *types
 	// Flow 1: Message from ArtemisMQ (via corporate API) - store in external NATS stream for internal clients
 	
 	// Create a copy of the message with the correct subject for external stream
+	// Store only the actual content in the body to avoid duplication
 	externalMsg := &types.Message{
 		ID:        msg.ID,
 		Timestamp: msg.Timestamp,
 		Topic:     "external." + msg.Topic,  // Use external subject pattern
 		Source:    msg.Source,
 		Headers:   msg.Headers,
-		Body:      msg.Body,
+		Body:      msg.Body,  // Store only the actual content, not the full message structure
 	}
 	
 	// Store message in external NATS stream for internal clients to consume via REST API

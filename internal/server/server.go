@@ -582,13 +582,14 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 
 	// For corporate messages (Flow 2), publish directly to external stream
 	// This avoids the client consumer processing loop and makes messages available for external clients
+	// Store only the actual content in the body to avoid duplication
 	externalMsg := &types.Message{
 		ID:        messageID,
 		Timestamp: msgTimestamp,
 		Topic:     "external." + topic,  // Use external subject pattern
 		Source:    source,
 		Headers:   headers,
-		Body:      body,
+		Body:      body,  // Store only the actual content, not the full message structure
 	}
 	
 	// Publish message directly to external stream
