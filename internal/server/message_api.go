@@ -94,7 +94,15 @@ func (m *MessageAPIServer) Stop() error {
 
 // messagesHandler handles message retrieval endpoint
 func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Request) {
+	m.logger.Info("Received message API request",
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.String("deployment", m.config.Deployment.Type))
+
 	if r.Method != http.MethodGet {
+		m.logger.Warn("Invalid HTTP method for message API endpoint",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path))
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -104,9 +112,15 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	countStr := r.URL.Query().Get("count")
 
 	if topic == "" {
+		m.logger.Warn("Missing topic parameter in message API request",
+			zap.String("path", r.URL.Path))
 		http.Error(w, `{"error": "topic parameter is required"}`, http.StatusBadRequest)
 		return
 	}
+
+	m.logger.Info("Processing message API request for topic",
+		zap.String("topic", topic),
+		zap.String("deployment", m.config.Deployment.Type))
 
 	// Check LDAP authorization for reading messages
 	if m.ldapMiddleware != nil && !m.ldapMiddleware.AuthorizeEndpoint(r, m.config.Deployment.Type, "read") {
@@ -121,6 +135,10 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	count := 1
 	if countStr != "" {
 		if parsedCount, err := strconv.Atoi(countStr); err != nil || parsedCount < 1 {
+			m.logger.Warn("Invalid count parameter in message API request",
+				zap.String("topic", topic),
+				zap.String("count", countStr),
+				zap.Error(err))
 			http.Error(w, `{"error": "count must be a positive integer"}`, http.StatusBadRequest)
 			return
 		} else {
@@ -132,6 +150,11 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	if count > 100 {
 		count = 100
 	}
+
+	m.logger.Info("Message API request parameters",
+		zap.String("topic", topic),
+		zap.Int("requested_count", count),
+		zap.String("deployment", m.config.Deployment.Type))
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -158,12 +181,18 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	consumerName := m.config.NATS.ExternalConsumer.DurableName
 	streamName := m.config.NATS.ExternalStream.Name
 
+	m.logger.Info("Accessing NATS stream for message retrieval",
+		zap.String("topic", topic),
+		zap.String("stream", streamName),
+		zap.String("consumer", consumerName))
+
 	// Check if the consumer exists
 	_, err := js.ConsumerInfo(streamName, consumerName)
 	if err != nil {
 		m.logger.Error("Failed to get consumer info",
 			zap.String("stream", streamName),
 			zap.String("consumer", consumerName),
+			zap.String("topic", topic),
 			zap.Error(err))
 		http.Error(w, `{"error": "Failed to access message stream consumer"}`, http.StatusInternalServerError)
 		return
@@ -175,6 +204,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		m.logger.Error("Failed to subscribe to messages",
 			zap.String("topic", topic),
+			zap.String("external_topic", externalTopic),
 			zap.String("consumer", consumerName),
 			zap.Error(err))
 		http.Error(w, `{"error": "Failed to subscribe to messages"}`, http.StatusInternalServerError)
@@ -182,13 +212,26 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	}
 	defer sub.Unsubscribe()
 
+	m.logger.Info("Fetching messages from NATS stream",
+		zap.String("topic", topic),
+		zap.String("external_topic", externalTopic),
+		zap.Int("requested_count", count))
+
 	// Fetch messages
 	fetchedMsgs, err := sub.Fetch(count, natsio.MaxWait(5*time.Second))
 	if err != nil && err != natsio.ErrTimeout {
-		m.logger.Error("Failed to fetch messages", zap.Error(err))
+		m.logger.Error("Failed to fetch messages",
+			zap.String("topic", topic),
+			zap.Int("requested_count", count),
+			zap.Error(err))
 		http.Error(w, `{"error": "Failed to fetch messages"}`, http.StatusInternalServerError)
 		return
 	}
+
+	m.logger.Info("Successfully fetched messages from NATS stream",
+		zap.String("topic", topic),
+		zap.Int("requested_count", count),
+		zap.Int("fetched_count", len(fetchedMsgs)))
 
 	// Process fetched messages
 	for _, msg := range fetchedMsgs {
@@ -238,11 +281,14 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 
 		// Acknowledge the message
 		if err := msg.Ack(); err != nil {
-			m.logger.Warn("Failed to acknowledge message", zap.Error(err))
+			m.logger.Warn("Failed to acknowledge message",
+				zap.String("message_id", headers["X-SMTS-Message-ID"]),
+				zap.String("topic", topic),
+				zap.Error(err))
 		}
 	}
 
-	m.logger.Info("Message API retrieved messages",
+	m.logger.Info("Message API retrieved messages successfully",
 		zap.String("topic", topic),
 		zap.Int("requested", count),
 		zap.Int("received", received),
@@ -260,10 +306,18 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 
 	jsonResponse, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		m.logger.Error("Failed to marshal messages response", zap.Error(err))
+		m.logger.Error("Failed to marshal messages response",
+			zap.String("topic", topic),
+			zap.Int("message_count", len(messages)),
+			zap.Error(err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+
+	m.logger.Info("Message API request completed successfully",
+		zap.String("topic", topic),
+		zap.Int("message_count", len(messages)),
+		zap.String("deployment", m.config.Deployment.Type))
 
 	w.WriteHeader(http.StatusOK)
 	w.Write(jsonResponse)

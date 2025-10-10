@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // HTTPLDAPClient represents an HTTP-based LDAP client for authentication and authorization
@@ -19,6 +21,7 @@ type HTTPLDAPClient struct {
 	UserFilter  string
 	GroupFilter string
 	Attributes  []string
+	logger      *zap.Logger
 }
 
 // AuthRequest represents an authentication request
@@ -30,7 +33,7 @@ type AuthRequest struct {
 // AuthResponse represents an authentication response
 type AuthResponse struct {
 	Success bool                   `json:"success"`
-	User    map[string]interface{} `json:"user,omitempty"`
+	User    interface{}            `json:"user,omitempty"`
 	Error   string                 `json:"error,omitempty"`
 }
 
@@ -49,8 +52,9 @@ type SearchResponse struct {
 }
 
 // NewHTTPLDAPClient creates a new HTTP-based LDAP client
-func NewHTTPLDAPClient(host string, port int, base string, bindDN string, bindPassword string, userFilter string, groupFilter string, attributes []string) *HTTPLDAPClient {
+func NewHTTPLDAPClient(host string, port int, base string, bindDN string, bindPassword string, userFilter string, groupFilter string, attributes []string, logger *zap.Logger) *HTTPLDAPClient {
 	baseURL := fmt.Sprintf("http://%s:%d", host, port)
+	
 	return &HTTPLDAPClient{
 		BaseURL:     baseURL,
 		Timeout:     10 * time.Second,
@@ -60,11 +64,14 @@ func NewHTTPLDAPClient(host string, port int, base string, bindDN string, bindPa
 		UserFilter:  userFilter,
 		GroupFilter: groupFilter,
 		Attributes:  attributes,
+		logger:      logger,
 	}
 }
 
 // Authenticate authenticates a user against the HTTP LDAP server
 func (hc *HTTPLDAPClient) Authenticate(username, password string) (bool, map[string]string, error) {
+	hc.logger.Info("Starting LDAP authentication", zap.String("username", username))
+	
 	authReq := AuthRequest{
 		Username: username,
 		Password: password,
@@ -91,24 +98,100 @@ func (hc *HTTPLDAPClient) Authenticate(username, password string) (bool, map[str
 		return false, nil, fmt.Errorf("failed to read auth response: %w", err)
 	}
 
+	hc.logger.Debug("Raw LDAP auth response", zap.String("body", string(body)))
+
 	var authResp AuthResponse
 	if err := json.Unmarshal(body, &authResp); err != nil {
 		return false, nil, fmt.Errorf("failed to unmarshal auth response: %w", err)
 	}
 
+	hc.logger.Debug("Parsed auth response",
+		zap.Bool("success", authResp.Success),
+		zap.Any("user", authResp.User),
+		zap.String("error", authResp.Error))
+
 	if !authResp.Success {
 		return false, nil, fmt.Errorf("authentication failed: %s", authResp.Error)
 	}
 
-	// Convert the user map to the expected format
+	// Convert the user object to the expected format
 	userInfo := make(map[string]string)
 	if authResp.User != nil {
-		for key, value := range authResp.User {
-			if strValue, ok := value.(string); ok {
-				userInfo[key] = strValue
+		// Debug: log the user structure to see what we're getting
+		hc.logger.Debug("LDAP authentication response user object",
+			zap.String("type", fmt.Sprintf("%T", authResp.User)),
+			zap.Any("content", authResp.User))
+		
+		// Try to handle as map first (for backward compatibility)
+		if userMap, ok := authResp.User.(map[string]interface{}); ok {
+			// Handle structured LDAPUser response from mock server
+			if username, ok := userMap["username"].(string); ok && username != "" {
+				userInfo["uid"] = username
+				userInfo["cn"] = username
+				hc.logger.Debug("Found username in map", zap.String("username", username))
+			} else {
+				hc.logger.Debug("No username found in user map")
+			}
+			if email, ok := userMap["email"].(string); ok && email != "" {
+				userInfo["mail"] = email
+			}
+			if displayName, ok := userMap["displayName"].(string); ok && displayName != "" {
+				userInfo["displayName"] = displayName
+			}
+			if dn, ok := userMap["distinguishedName"].(string); ok && dn != "" {
+				userInfo["distinguishedName"] = dn
+			}
+			if dn, ok := userMap["dn"].(string); ok && dn != "" {
+				userInfo["distinguishedName"] = dn
+			}
+		} else {
+			// Try to handle as JSON object (for structured responses)
+			userJSON, err := json.Marshal(authResp.User)
+			if err == nil {
+				var userMap map[string]interface{}
+				if err := json.Unmarshal(userJSON, &userMap); err == nil {
+					// Handle structured LDAPUser response from mock server
+					if username, ok := userMap["username"].(string); ok && username != "" {
+						userInfo["uid"] = username
+						userInfo["cn"] = username
+						hc.logger.Debug("Found username in JSON", zap.String("username", username))
+					} else {
+						hc.logger.Debug("No username found in user JSON")
+					}
+					if email, ok := userMap["email"].(string); ok && email != "" {
+						userInfo["mail"] = email
+					}
+					if displayName, ok := userMap["displayName"].(string); ok && displayName != "" {
+						userInfo["displayName"] = displayName
+					}
+					if dn, ok := userMap["distinguishedName"].(string); ok && dn != "" {
+						userInfo["distinguishedName"] = dn
+					}
+					if dn, ok := userMap["dn"].(string); ok && dn != "" {
+						userInfo["distinguishedName"] = dn
+					}
+				} else {
+					hc.logger.Debug("Failed to unmarshal user JSON", zap.Error(err))
+				}
+			} else {
+				hc.logger.Debug("Failed to marshal user object", zap.Error(err))
 			}
 		}
+	} else {
+		hc.logger.Debug("authResp.User is nil")
 	}
+	
+	// Fallback: if we still don't have a username, use the original username from the request
+	if userInfo["uid"] == "" {
+		userInfo["uid"] = username
+		userInfo["cn"] = username
+		hc.logger.Debug("Using original username as fallback", zap.String("username", username))
+	}
+	
+	hc.logger.Debug("Final userInfo", zap.Any("userInfo", userInfo))
+	hc.logger.Info("LDAP authentication completed successfully",
+		zap.String("username", username),
+		zap.Any("user_info", userInfo))
 
 	return true, userInfo, nil
 }

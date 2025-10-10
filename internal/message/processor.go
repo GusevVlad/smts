@@ -46,6 +46,12 @@ func (p *Processor) HandleMessage(ctx context.Context, msg *types.Message) (*typ
 	operation := "process_message"
 	startTime := time.Now()
 
+	p.logger.Info("Starting message processing",
+		append(utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic),
+			zap.String("source", msg.Source),
+			zap.String("client_sender", msg.ClientSender),
+			zap.Time("message_timestamp", msg.Timestamp))...)
+
 	// Skip topic validation for external topics (they use external.* pattern)
 	if !strings.HasPrefix(msg.Topic, "external.") {
 		// Validate topic configuration for non-external topics
@@ -81,9 +87,15 @@ func (p *Processor) HandleMessage(ctx context.Context, msg *types.Message) (*typ
 		
 		if isFromCorporateAPI {
 			// Flow 2: Message from corporate API (via ArtemisMQ) - store in external NATS stream for external clients
+			p.logger.Info("Processing EXT message from corporate API (Flow 2)",
+				append(utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic),
+					zap.String("source", msg.Source))...)
 			result, err = p.processEXTMessageFromCorporateAPI(ctx, msg)
 		} else {
 			// Flow 1: Message from NATS (external client) - deliver to corporate API
+			p.logger.Info("Processing EXT message from NATS client (Flow 1)",
+				append(utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic),
+					zap.String("source", msg.Source))...)
 			result, err = p.processEXTMessage(ctx, msg)
 		}
 	case "int":
@@ -99,9 +111,15 @@ func (p *Processor) HandleMessage(ctx context.Context, msg *types.Message) (*typ
 		
 		if isFromArtemis {
 			// Flow 1: Message from ArtemisMQ (via corporate API) - store in NATS for internal clients
+			p.logger.Info("Processing INT message from ArtemisMQ (Flow 1)",
+				append(utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic),
+					zap.String("source", msg.Source))...)
 			result, err = p.processINTMessageFromArtemis(ctx, msg)
 		} else {
 			// Flow 2: Message from NATS (internal client) - publish to ArtemisMQ
+			p.logger.Info("Processing INT message from NATS client (Flow 2)",
+				append(utils.LoggerFields(operation, p.deployment, msg.ID, msg.Topic),
+					zap.String("source", msg.Source))...)
 			result, err = p.processINTMessageToArtemis(ctx, msg)
 		}
 	default:
@@ -138,18 +156,30 @@ func (p *Processor) HandleMessage(ctx context.Context, msg *types.Message) (*typ
 
 // processEXTMessage processes messages for EXT deployment (direct delivery)
 func (p *Processor) processEXTMessage(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error) {
+	p.logger.Info("Delivering EXT message to corporate API",
+		append(utils.LoggerFields("ext_deliver", p.deployment, msg.ID, msg.Topic),
+			zap.String("source", msg.Source))...)
 	// EXT deployment: Direct delivery to corporate API
 	return p.apiClient.DeliverMessage(ctx, msg)
 }
 
 // processINTMessageToArtemis processes messages for INT deployment that need to go to ArtemisMQ (Flow 2)
 func (p *Processor) processINTMessageToArtemis(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error) {
+	p.logger.Info("Processing INT message for ArtemisMQ delivery",
+		append(utils.LoggerFields("int_to_artemis", p.deployment, msg.ID, msg.Topic),
+			zap.String("source", msg.Source))...)
 	// INT deployment: DLP validation followed by delivery to ArtemisMQ
 	
 	// Step 1: DLP validation
 	if p.config.DLP.Enabled {
+		p.logger.Info("Performing DLP validation for INT message",
+			append(utils.LoggerFields("dlp_validation", p.deployment, msg.ID, msg.Topic),
+				zap.String("source", msg.Source))...)
 		dlpResult, err := p.apiClient.ValidateMessage(ctx, msg)
 		if err != nil {
+			p.logger.Warn("DLP validation failed",
+				append(utils.LoggerFields("dlp_validation", p.deployment, msg.ID, msg.Topic),
+					utils.WithError(err))...)
 			return &types.DeliveryResult{
 				Success:    false,
 				MessageID:  msg.ID,
@@ -159,6 +189,9 @@ func (p *Processor) processINTMessageToArtemis(ctx context.Context, msg *types.M
 		}
 
 		if !dlpResult.Approved {
+			p.logger.Warn("Message rejected by DLP validation",
+				append(utils.LoggerFields("dlp_validation", p.deployment, msg.ID, msg.Topic),
+					zap.Strings("rejection_reasons", dlpResult.Reasons))...)
 			return &types.DeliveryResult{
 				Success:    false,
 				MessageID:  msg.ID,
@@ -166,12 +199,22 @@ func (p *Processor) processINTMessageToArtemis(ctx context.Context, msg *types.M
 				Error:      "DLP validation failed: " + p.formatDLPReasons(dlpResult.Reasons),
 			}, types.NewSMTSError(types.ErrDLPValidation, "Message rejected by DLP")
 		}
+		p.logger.Info("DLP validation passed",
+			append(utils.LoggerFields("dlp_validation", p.deployment, msg.ID, msg.Topic),
+				zap.String("source", msg.Source))...)
 	}
 
 	// Step 2: For INT deployment, publish to ArtemisMQ instead of direct delivery
 	// This enables Flow 2: INT → ArtemisMQ → Corporate API → EXT
 	if p.artemisPublisher != nil {
+		p.logger.Info("Publishing INT message to ArtemisMQ",
+			append(utils.LoggerFields("publish_artemis", p.deployment, msg.ID, msg.Topic),
+				zap.String("queue", p.config.Artemis.Queue),
+				zap.String("source", msg.Source))...)
 		if err := p.artemisPublisher.PublishMessage(msg); err != nil {
+			p.logger.Error("Failed to publish message to ArtemisMQ",
+				append(utils.LoggerFields("publish_artemis", p.deployment, msg.ID, msg.Topic),
+					utils.WithError(err))...)
 			return &types.DeliveryResult{
 				Success:    false,
 				MessageID:  msg.ID,
@@ -181,9 +224,9 @@ func (p *Processor) processINTMessageToArtemis(ctx context.Context, msg *types.M
 		}
 		
 		p.logger.Info("Message published to ArtemisMQ",
-			zap.String("message_id", msg.ID),
-			zap.String("topic", msg.Topic),
-			zap.String("queue", p.config.Artemis.Queue))
+			append(utils.LoggerFields("publish_artemis", p.deployment, msg.ID, msg.Topic),
+				zap.String("queue", p.config.Artemis.Queue),
+				zap.String("source", msg.Source))...)
 		
 		return &types.DeliveryResult{
 			Success:   true,
@@ -198,21 +241,35 @@ func (p *Processor) processINTMessageToArtemis(ctx context.Context, msg *types.M
 
 // processEXTMessageFromCorporateAPI processes messages for EXT deployment that come from corporate API (Flow 2)
 func (p *Processor) processEXTMessageFromCorporateAPI(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error) {
+	p.logger.Info("Processing EXT message from corporate API for external stream",
+		append(utils.LoggerFields("ext_from_corp_api", p.deployment, msg.ID, msg.Topic),
+			zap.String("source", msg.Source))...)
+	
 	// Flow 2: Message from corporate API (via ArtemisMQ) - store in external NATS stream for external clients
 	
 	// Create a copy of the message with the correct subject for external stream
 	// Store only the actual content in the body to avoid duplication
 	externalMsg := &types.Message{
-		ID:        msg.ID,
-		Timestamp: msg.Timestamp,
-		Topic:     "external." + msg.Topic,  // Use external subject pattern
-		Source:    msg.Source,
-		Headers:   msg.Headers,
-		Body:      msg.Body,  // Store only the actual content, not the full message structure
+		ID:           msg.ID,
+		Timestamp:    msg.Timestamp,
+		Topic:        "external." + msg.Topic,  // Use external subject pattern
+		Source:       msg.Source,
+		ClientSender: msg.ClientSender,
+		Headers:      msg.Headers,
+		Body:         msg.Body,  // Store only the actual content, not the full message structure
 	}
+	
+	p.logger.Info("Publishing EXT message to external NATS stream",
+		append(utils.LoggerFields("publish_ext_stream", p.deployment, msg.ID, msg.Topic),
+			zap.String("external_topic", externalMsg.Topic),
+			zap.String("stream", p.config.NATS.ExternalStream.Name),
+			zap.String("source", msg.Source))...)
 	
 	// Store message in external NATS stream for external clients to consume via REST API
 	if err := p.natsPublisher.PublishMessageToStream(externalMsg, p.config.NATS.ExternalStream.Name); err != nil {
+		p.logger.Error("Failed to publish message to external NATS stream",
+			append(utils.LoggerFields("publish_ext_stream", p.deployment, msg.ID, msg.Topic),
+				utils.WithError(err))...)
 		return &types.DeliveryResult{
 			Success:    false,
 			MessageID:  msg.ID,
@@ -222,11 +279,10 @@ func (p *Processor) processEXTMessageFromCorporateAPI(ctx context.Context, msg *
 	}
 	
 	p.logger.Info("Message stored in external NATS stream from corporate API",
-		zap.String("message_id", msg.ID),
-		zap.String("topic", msg.Topic),
-		zap.String("external_topic", externalMsg.Topic),
-		zap.String("source", msg.Source),
-		zap.String("stream", p.config.NATS.ExternalStream.Name))
+		append(utils.LoggerFields("publish_ext_stream", p.deployment, msg.ID, msg.Topic),
+			zap.String("external_topic", externalMsg.Topic),
+			zap.String("source", msg.Source),
+			zap.String("stream", p.config.NATS.ExternalStream.Name))...)
 	
 	return &types.DeliveryResult{
 		Success:   true,
@@ -237,21 +293,35 @@ func (p *Processor) processEXTMessageFromCorporateAPI(ctx context.Context, msg *
 
 // processINTMessageFromArtemis processes messages for INT deployment that come from ArtemisMQ (Flow 1)
 func (p *Processor) processINTMessageFromArtemis(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error) {
+	p.logger.Info("Processing INT message from ArtemisMQ for external stream",
+		append(utils.LoggerFields("int_from_artemis", p.deployment, msg.ID, msg.Topic),
+			zap.String("source", msg.Source))...)
+	
 	// Flow 1: Message from ArtemisMQ (via corporate API) - store in external NATS stream for internal clients
 	
 	// Create a copy of the message with the correct subject for external stream
 	// Store only the actual content in the body to avoid duplication
 	externalMsg := &types.Message{
-		ID:        msg.ID,
-		Timestamp: msg.Timestamp,
-		Topic:     "external." + msg.Topic,  // Use external subject pattern
-		Source:    msg.Source,
-		Headers:   msg.Headers,
-		Body:      msg.Body,  // Store only the actual content, not the full message structure
+		ID:           msg.ID,
+		Timestamp:    msg.Timestamp,
+		Topic:        "external." + msg.Topic,  // Use external subject pattern
+		Source:       msg.Source,
+		ClientSender: msg.ClientSender,
+		Headers:      msg.Headers,
+		Body:         msg.Body,  // Store only the actual content, not the full message structure
 	}
+	
+	p.logger.Info("Publishing INT message to external NATS stream",
+		append(utils.LoggerFields("publish_ext_stream", p.deployment, msg.ID, msg.Topic),
+			zap.String("external_topic", externalMsg.Topic),
+			zap.String("stream", p.config.NATS.ExternalStream.Name),
+			zap.String("source", msg.Source))...)
 	
 	// Store message in external NATS stream for internal clients to consume via REST API
 	if err := p.natsPublisher.PublishMessageToStream(externalMsg, p.config.NATS.ExternalStream.Name); err != nil {
+		p.logger.Error("Failed to publish message to external NATS stream",
+			append(utils.LoggerFields("publish_ext_stream", p.deployment, msg.ID, msg.Topic),
+				utils.WithError(err))...)
 		return &types.DeliveryResult{
 			Success:    false,
 			MessageID:  msg.ID,
@@ -261,11 +331,10 @@ func (p *Processor) processINTMessageFromArtemis(ctx context.Context, msg *types
 	}
 	
 	p.logger.Info("Message stored in external NATS stream from ArtemisMQ",
-		zap.String("message_id", msg.ID),
-		zap.String("topic", msg.Topic),
-		zap.String("external_topic", externalMsg.Topic),
-		zap.String("source", msg.Source),
-		zap.String("stream", p.config.NATS.ExternalStream.Name))
+		append(utils.LoggerFields("publish_ext_stream", p.deployment, msg.ID, msg.Topic),
+			zap.String("external_topic", externalMsg.Topic),
+			zap.String("source", msg.Source),
+			zap.String("stream", p.config.NATS.ExternalStream.Name))...)
 	
 	return &types.DeliveryResult{
 		Success:   true,

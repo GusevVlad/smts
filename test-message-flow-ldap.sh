@@ -450,7 +450,7 @@ echo "  ✅ LDAP Auth Failure Test: $([ "$LDAP_AUTH_FAILURE_TESTED" = true ] && 
 echo "  ✅ LDAP Auth Success: $([ "$LDAP_AUTH_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
 echo "  ✅ EXT SMTS Send: $([ "$EXT_SEND_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
 echo "  ✅ INT SMTS Send: $([ "$INT_SEND_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
-echo "  ✅ EXT → INT Flow: $([ "$EXT_TO_INT_FLOW_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
-echo "  ✅ INT → EXT Flow: $([ "$INT_TO_EXT_FLOW_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ EXT → INT Flow: $([ "$EXT_TO_INT_FLOW_SUCCESS" = true ] && echo "PASS" || echo "⚠️  NO MESSAGES FOUND")"
+echo "  ✅ INT → EXT Flow: $([ "$INT_TO_EXT_FLOW_SUCCESS" = true ] && echo "PASS" || echo "⚠️  NO MESSAGES FOUND")"
 echo
-echo "Overall Status: $([ "$EXT_SEND_SUCCESS" = true ] && [ "$INT_SEND_SUCCESS" = true ] && [ "$SERVICES_HEALTHY" = true ] && [ "$LDAP_AUTH_SUCCESS" = true ] && echo "✅ ALL TESTS PASSED" || echo "❌ SOME TESTS FAILED")"
+echo "Overall Status: $([ "$EXT_SEND_SUCCESS" = true ] && [ "$INT_SEND_SUCCESS" = true ] && [ "$SERVICES_HEALTHY" = true ] && [ "$LDAP_AUTH_SUCCESS" = true ] && [ "$EXT_TO_INT_FLOW_SUCCESS" = true ] && [ "$INT_TO_EXT_FLOW_SUCCESS" = true ] && echo "✅ ALL TESTS PASSED" || echo "❌ SOME TESTS FAILED")"

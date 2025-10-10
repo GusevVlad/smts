@@ -7,23 +7,25 @@ import (
 
 // Message represents the unified message format for SMTS
 type Message struct {
-	ID        string            `json:"id"`
-	Timestamp time.Time         `json:"timestamp"`
-	Topic     string            `json:"topic"`
-	Source    string            `json:"source"`
-	Headers   map[string]string `json:"headers"`
-	Body      json.RawMessage   `json:"body"` // JSON raw type for flexible message content
+	ID           string            `json:"id"`
+	Timestamp    time.Time         `json:"timestamp"`
+	Topic        string            `json:"topic"`
+	Source       string            `json:"source"`
+	ClientSender string            `json:"client_sender,omitempty"` // Username from LDAP auth info
+	Headers      map[string]string `json:"headers"`
+	Body         json.RawMessage   `json:"body"` // JSON raw type for flexible message content
 }
 
 // NewMessage creates a new message with the given topic and body
 func NewMessage(topic string, body json.RawMessage) *Message {
 	return &Message{
-		ID:        generateID(),
-		Timestamp: time.Now().UTC(),
-		Topic:     topic,
-		Source:    "smts",
-		Headers:   make(map[string]string),
-		Body:      body,
+		ID:           generateID(),
+		Timestamp:    time.Now().UTC(),
+		Topic:        topic,
+		Source:       "smts",
+		ClientSender: "", // Default empty client_sender
+		Headers:      make(map[string]string),
+		Body:         body,
 	}
 }
 

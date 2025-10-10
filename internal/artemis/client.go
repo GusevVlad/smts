@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"smts/pkg/types"
@@ -24,6 +26,8 @@ type Client struct {
 	conn          *stomp.Conn
 	connected     bool
 	publishQueue  string // Queue for publishing messages (Flow 2)
+	reconnectMutex sync.RWMutex
+	stopReconnect  chan struct{}
 }
 
 // NewClient creates a new ArtemisMQ client
@@ -32,6 +36,7 @@ func NewClient(config *types.ArtemisConfig, logger *zap.Logger) (*Client, error)
 		config:       config,
 		logger:       logger,
 		publishQueue: config.Queue, // Default to same queue for backward compatibility
+		stopReconnect: make(chan struct{}),
 	}
 
 	// For INT deployment, use different queue for publishing (Flow 2)
@@ -53,12 +58,15 @@ func NewClient(config *types.ArtemisConfig, logger *zap.Logger) (*Client, error)
 
 // connect establishes connection to ArtemisMQ
 func (c *Client) connect() error {
+	c.reconnectMutex.Lock()
+	defer c.reconnectMutex.Unlock()
+
 	server := fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)
 
-	// Connection options
+	// Connection options with longer timeouts for better stability
 	options := []func(*stomp.Conn) error{
 		stomp.ConnOpt.Login(c.config.Username, c.config.Password),
-		stomp.ConnOpt.HeartBeat(10*time.Second, 10*time.Second),
+		stomp.ConnOpt.HeartBeat(30*time.Second, 30*time.Second), // Longer heartbeat for better network tolerance
 		stomp.ConnOpt.AcceptVersion(stomp.V12),
 	}
 
@@ -73,7 +81,8 @@ func (c *Client) connect() error {
 
 	c.logger.Info("Connected to ArtemisMQ",
 		zap.String("server", server),
-		zap.String("queue", c.config.Queue))
+		zap.String("queue", c.config.Queue),
+		zap.String("deployment", "int"))
 
 	return nil
 }
@@ -90,7 +99,9 @@ func (c *Client) Start(ctx context.Context, processor MessageProcessor) error {
 		return types.WrapSMTSError(err, types.ErrArtemisConsume, "Failed to subscribe to Artemis queue")
 	}
 
-	c.logger.Info("Started consuming from ArtemisMQ", zap.String("queue", c.config.Queue))
+	c.logger.Info("Started consuming from ArtemisMQ",
+		zap.String("queue", c.config.Queue),
+		zap.String("deployment", "int"))
 
 	// Start message processing loop
 	go c.processMessages(ctx, sub, processor)
@@ -106,7 +117,8 @@ func (c *Client) processMessages(ctx context.Context, sub *stomp.Subscription, p
 	for {
 		select {
 		case <-ctx.Done():
-			c.logger.Info("Stopping ArtemisMQ message processing")
+			c.logger.Info("Stopping ArtemisMQ message processing",
+				zap.String("deployment", "int"))
 			return
 
 		case msg := <-sub.C:
@@ -146,6 +158,11 @@ func (c *Client) handleMessage(ctx context.Context, msg *stomp.Message, processo
 	operation := "artemis_process_message"
 	startTime := time.Now()
 
+	c.logger.Info("Received message from ArtemisMQ",
+		zap.String("queue", c.config.Queue),
+		zap.String("destination", msg.Destination),
+		zap.String("deployment", "int"))
+
 	// Parse the message
 	smtsMsg, err := c.parseMessage(msg)
 	if err != nil {
@@ -160,6 +177,12 @@ func (c *Client) handleMessage(ctx context.Context, msg *stomp.Message, processo
 		return
 	}
 
+	c.logger.Info("Parsed ArtemisMQ message successfully",
+		append(utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic),
+			zap.String("source", smtsMsg.Source),
+			zap.String("client_sender", smtsMsg.ClientSender),
+			zap.Time("message_timestamp", smtsMsg.Timestamp))...)
+
 	// Process the message using the processor
 	result, err := processor.HandleMessage(ctx, smtsMsg)
 	if err != nil {
@@ -169,11 +192,17 @@ func (c *Client) handleMessage(ctx context.Context, msg *stomp.Message, processo
 
 		// Check if we should retry
 		if types.IsRetryableError(err) {
+			c.logger.Info("ArtemisMQ message processing failed with retryable error, nacking for retry",
+				append(utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic),
+					zap.String("source", smtsMsg.Source))...)
 			// Nack for retry
 			if nackErr := c.conn.Nack(msg); nackErr != nil {
 				c.logger.Error("Failed to nack message for retry", zap.Error(nackErr))
 			}
 		} else {
+			c.logger.Info("ArtemisMQ message processing failed with non-retryable error, acking to avoid reprocessing",
+				append(utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic),
+					zap.String("source", smtsMsg.Source))...)
 			// Ack non-retryable errors
 			if ackErr := c.conn.Ack(msg); ackErr != nil {
 				c.logger.Error("Failed to ack failed message", zap.Error(ackErr))
@@ -189,8 +218,9 @@ func (c *Client) handleMessage(ctx context.Context, msg *stomp.Message, processo
 				append(utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic),
 					utils.WithError(err))...)
 		} else {
-			c.logger.Debug("ArtemisMQ message processed successfully",
+			c.logger.Info("ArtemisMQ message processed successfully and acknowledged",
 				append(utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic),
+					zap.String("source", smtsMsg.Source),
 					utils.WithDuration(time.Since(startTime).Milliseconds()))...)
 		}
 	} else {
@@ -200,9 +230,10 @@ func (c *Client) handleMessage(ctx context.Context, msg *stomp.Message, processo
 				append(utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic),
 					utils.WithError(err))...)
 		}
-		c.logger.Warn("ArtemisMQ message processing failed",
+		c.logger.Warn("ArtemisMQ message processing completed with failure",
 			append(utils.LoggerFields(operation, "int", smtsMsg.ID, smtsMsg.Topic),
 				zap.String("error", result.Error),
+				zap.String("source", smtsMsg.Source),
 				utils.WithDuration(time.Since(startTime).Milliseconds()))...)
 	}
 }
@@ -259,13 +290,28 @@ func (c *Client) parseMessage(msg *stomp.Message) (*types.Message, error) {
 
 // PublishMessage publishes a message to ArtemisMQ
 func (c *Client) PublishMessage(msg *types.Message) error {
+	c.reconnectMutex.RLock()
+	defer c.reconnectMutex.RUnlock()
+
 	if !c.connected || c.conn == nil {
 		return types.NewSMTSError(types.ErrArtemisConnection, "Not connected to ArtemisMQ")
 	}
 
+	c.logger.Info("Publishing message to ArtemisMQ",
+		zap.String("message_id", msg.ID),
+		zap.String("topic", msg.Topic),
+		zap.String("source", msg.Source),
+		zap.String("client_sender", msg.ClientSender),
+		zap.String("queue", c.publishQueue),
+		zap.String("deployment", "int"))
+
 	// Convert message to JSON
 	messageData, err := json.Marshal(msg)
 	if err != nil {
+		c.logger.Error("Failed to marshal message to JSON for ArtemisMQ",
+			zap.String("message_id", msg.ID),
+			zap.String("topic", msg.Topic),
+			zap.Error(err))
 		return types.WrapSMTSError(err, types.ErrArtemisPublish, "Failed to marshal message to JSON")
 	}
 
@@ -281,19 +327,40 @@ func (c *Client) PublishMessage(msg *types.Message) error {
 		stomp.SendOpt.Header("persistent", "true"),
 	)
 	if err != nil {
+		// Check if this is a connection error and attempt to reconnect
+		if strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "disconnect") {
+			c.logger.Warn("ArtemisMQ connection error detected, will attempt to reconnect on next operation",
+				zap.String("message_id", msg.ID),
+				zap.String("topic", msg.Topic),
+				zap.Error(err))
+			c.connected = false
+		}
+		c.logger.Error("Failed to publish message to ArtemisMQ",
+			zap.String("message_id", msg.ID),
+			zap.String("topic", msg.Topic),
+			zap.String("queue", c.publishQueue),
+			zap.Error(err))
 		return types.WrapSMTSError(err, types.ErrArtemisPublish, "Failed to publish message to ArtemisMQ")
 	}
 
-	c.logger.Debug("Message published to ArtemisMQ",
+	c.logger.Info("Message published to ArtemisMQ successfully",
 		zap.String("message_id", msg.ID),
 		zap.String("topic", msg.Topic),
-		zap.String("queue", c.publishQueue))
+		zap.String("source", msg.Source),
+		zap.String("client_sender", msg.ClientSender),
+		zap.String("queue", c.publishQueue),
+		zap.String("deployment", "int"))
 
 	return nil
 }
 
 // Stop stops the ArtemisMQ client
 func (c *Client) Stop() error {
+	close(c.stopReconnect)
+	
+	c.reconnectMutex.Lock()
+	defer c.reconnectMutex.Unlock()
+	
 	if c.conn != nil {
 		if err := c.conn.Disconnect(); err != nil {
 			c.logger.Error("Error disconnecting from ArtemisMQ", zap.Error(err))
@@ -302,12 +369,16 @@ func (c *Client) Stop() error {
 		c.connected = false
 	}
 
-	c.logger.Info("ArtemisMQ client stopped")
+	c.logger.Info("ArtemisMQ client stopped",
+		zap.String("deployment", "int"))
 	return nil
 }
 
 // HealthCheck performs a health check on the ArtemisMQ connection
 func (c *Client) HealthCheck(ctx context.Context) error {
+	c.reconnectMutex.RLock()
+	defer c.reconnectMutex.RUnlock()
+
 	if !c.connected || c.conn == nil {
 		return types.NewSMTSError(types.ErrHealthCheck, "Not connected to ArtemisMQ")
 	}
@@ -319,6 +390,12 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 	}
 
 	if err := c.conn.Send(testMsg.Destination, "text/plain", testMsg.Body); err != nil {
+		// Check if this is a connection error
+		if strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "disconnect") {
+			c.logger.Warn("ArtemisMQ connection error detected during health check",
+				zap.Error(err))
+			c.connected = false
+		}
 		return types.WrapSMTSError(err, types.ErrHealthCheck, "ArtemisMQ health check failed")
 	}
 
@@ -327,5 +404,24 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 
 // IsConnected returns true if the client is connected to ArtemisMQ
 func (c *Client) IsConnected() bool {
+	c.reconnectMutex.RLock()
+	defer c.reconnectMutex.RUnlock()
 	return c.connected && c.conn != nil
+}
+
+// ensureConnected ensures the client is connected, reconnecting if necessary
+func (c *Client) ensureConnected() error {
+	if c.IsConnected() {
+		return nil
+	}
+
+	c.logger.Info("Attempting to reconnect to ArtemisMQ",
+		zap.String("deployment", "int"))
+	if err := c.connect(); err != nil {
+		return types.WrapSMTSError(err, types.ErrArtemisConnection, "Failed to reconnect to ArtemisMQ")
+	}
+
+	c.logger.Info("Successfully reconnected to ArtemisMQ",
+		zap.String("deployment", "int"))
+	return nil
 }

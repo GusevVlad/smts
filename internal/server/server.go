@@ -105,10 +105,10 @@ func NewServer(configPath string) (*Server, error) {
 	processor := message.NewProcessor(cfg, apiClient, natsClient, publisher, artemisClient, logger)
 
 	// Create NATS consumer for client messages
-	clientConsumer := nats.NewConsumer(natsClient, cfg.NATS.ClientStream.Name, &cfg.NATS.ClientConsumer, processor, logger)
+	clientConsumer := nats.NewConsumer(natsClient, cfg.NATS.ClientStream.Name, &cfg.NATS.ClientConsumer, processor, logger, cfg.Deployment.Type)
 
 	// Create NATS consumer for external messages (for message API only - no processing)
-	externalConsumer := nats.NewConsumer(natsClient, cfg.NATS.ExternalStream.Name, &cfg.NATS.ExternalConsumer, nil, logger)
+	externalConsumer := nats.NewConsumer(natsClient, cfg.NATS.ExternalStream.Name, &cfg.NATS.ExternalConsumer, nil, logger, cfg.Deployment.Type)
 
 	// Create health server
 	healthServer := NewHealthServer(cfg, logger)
@@ -356,22 +356,38 @@ func (s *Server) startHTTPServer() error {
 
 // messageHandler handles incoming HTTP messages and publishes them to NATS
 func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("Received HTTP message request",
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.String("deployment", s.config.Deployment.Type))
+
 	if r.Method != http.MethodPost {
+		s.logger.Warn("Invalid HTTP method for message endpoint",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path))
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	// Extract topic from URL path (remove "/send/" prefix)
 	if !strings.HasPrefix(r.URL.Path, "/send/") {
+		s.logger.Warn("Invalid endpoint for message handler",
+			zap.String("path", r.URL.Path))
 		http.Error(w, `{"error": "Invalid endpoint"}`, http.StatusNotFound)
 		return
 	}
 	
 	topic := strings.TrimPrefix(r.URL.Path, "/send/")
 	if topic == "" {
+		s.logger.Warn("Missing topic in URL path",
+			zap.String("path", r.URL.Path))
 		http.Error(w, `{"error": "Topic is required in URL path"}`, http.StatusBadRequest)
 		return
 	}
+
+	s.logger.Info("Processing HTTP message for topic",
+		zap.String("topic", topic),
+		zap.String("deployment", s.config.Deployment.Type))
 
 	// Check LDAP authorization for sending messages
 	if s.ldapMiddleware != nil && !s.ldapMiddleware.AuthorizeEndpoint(r, s.config.Deployment.Type, "send") {
@@ -390,10 +406,11 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Validate required headers
 	if apiKey == "" {
+		s.logger.Warn("Missing X-API-Key header in HTTP request",
+			zap.String("topic", topic))
 		http.Error(w, `{"error": "X-API-Key header is required"}`, http.StatusUnauthorized)
 		return
 	}
-
 
 	// Check if topic exists in configuration (basic validation)
 	if _, exists := s.config.Topics.Topics[topic]; !exists {
@@ -406,11 +423,17 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 	// Read message body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		s.logger.Error("Failed to read request body", zap.Error(err))
+		s.logger.Error("Failed to read request body",
+			zap.String("topic", topic),
+			zap.Error(err))
 		http.Error(w, `{"error": "Failed to read request body"}`, http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
+
+	s.logger.Info("Read message body from HTTP request",
+		zap.String("topic", topic),
+		zap.Int("body_size", len(body)))
 
 	// Parse timestamp
 	var msgTimestamp time.Time
@@ -419,6 +442,7 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.logger.Warn("Invalid timestamp format, using current time",
 				zap.String("timestamp", timestamp),
+				zap.String("topic", topic),
 				zap.Error(err))
 			msgTimestamp = time.Now().UTC()
 		}
@@ -429,6 +453,9 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 	// Generate message ID if not provided
 	if messageID == "" {
 		messageID = nats.GenerateID()
+		s.logger.Info("Generated message ID for HTTP request",
+			zap.String("topic", topic),
+			zap.String("message_id", messageID))
 	}
 
 	// Set default source if not provided
@@ -448,30 +475,47 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 	headers["X-SMTS-API-Key"] = apiKey
 	headers["X-SMTS-Source"] = source
 
+	// Get client_sender from LDAP context
+	clientSender := ""
+	if userInfo, _ := userInfoFromContext(r.Context()); userInfo != nil {
+		clientSender = userInfo["uid"]
+	}
+
 	// Create message
 	msg := &types.Message{
-		ID:        messageID,
-		Timestamp: msgTimestamp,
-		Topic:     topic,
-		Source:    source,
-		Headers:   headers,
-		Body:      body,
+		ID:           messageID,
+		Timestamp:    msgTimestamp,
+		Topic:        topic,
+		Source:       source,
+		ClientSender: clientSender,
+		Headers:      headers,
+		Body:         body,
 	}
+
+	s.logger.Info("Publishing HTTP message to NATS",
+		zap.String("topic", topic),
+		zap.String("message_id", messageID),
+		zap.String("source", source),
+		zap.String("client_sender", clientSender),
+		zap.Time("message_timestamp", msgTimestamp))
 
 	// Publish message to NATS
 	if err := s.publisher.PublishMessage(msg); err != nil {
 		s.logger.Error("Failed to publish message",
 			zap.String("topic", topic),
 			zap.String("message_id", messageID),
+			zap.String("source", source),
 			zap.Error(err))
 		http.Error(w, `{"error": "Failed to publish message to stream"}`, http.StatusInternalServerError)
 		return
 	}
 
-	s.logger.Info("Message published successfully",
+	s.logger.Info("HTTP message published successfully to NATS",
 		zap.String("topic", topic),
 		zap.String("message_id", messageID),
-		zap.String("source", source))
+		zap.String("source", source),
+		zap.String("client_sender", clientSender),
+		zap.String("deployment", s.config.Deployment.Type))
 
 	// Return success response
 	response := map[string]interface{}{
@@ -489,22 +533,38 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 
 // corporateMessageHandler handles incoming corporate messages from corporate API (Flow 2: INT → EXT)
 func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("Received corporate message request",
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.String("deployment", s.config.Deployment.Type))
+
 	if r.Method != http.MethodPost {
+		s.logger.Warn("Invalid HTTP method for corporate message endpoint",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path))
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	// Extract topic from URL path (remove "/corp_message/" prefix)
 	if !strings.HasPrefix(r.URL.Path, "/corp_message/") {
+		s.logger.Warn("Invalid endpoint for corporate message handler",
+			zap.String("path", r.URL.Path))
 		http.Error(w, `{"error": "Invalid endpoint"}`, http.StatusNotFound)
 		return
 	}
 	
 	topic := strings.TrimPrefix(r.URL.Path, "/corp_message/")
 	if topic == "" {
+		s.logger.Warn("Missing topic in URL path for corporate message",
+			zap.String("path", r.URL.Path))
 		http.Error(w, `{"error": "Topic is required in URL path"}`, http.StatusBadRequest)
 		return
 	}
+
+	s.logger.Info("Processing corporate message for topic",
+		zap.String("topic", topic),
+		zap.String("deployment", s.config.Deployment.Type))
 
 	// Check LDAP authorization for corporate message endpoint
 	if s.ldapMiddleware != nil && !s.ldapMiddleware.AuthorizeEndpoint(r, s.config.Deployment.Type, "corp_message") {
@@ -523,13 +583,15 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 
 	// Validate required headers
 	if apiKey == "" {
+		s.logger.Warn("Missing X-API-Key header in corporate message request",
+			zap.String("topic", topic))
 		http.Error(w, `{"error": "X-API-Key header is required"}`, http.StatusUnauthorized)
 		return
 	}
 
 	// Check if topic exists in configuration (basic validation)
 	if _, exists := s.config.Topics.Topics[topic]; !exists {
-		s.logger.Warn("Topic not found in configuration",
+		s.logger.Warn("Topic not found in configuration for corporate message",
 			zap.String("topic", topic))
 		http.Error(w, `{"error": "Topic not found in configuration"}`, http.StatusBadRequest)
 		return
@@ -538,19 +600,26 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 	// Read message body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		s.logger.Error("Failed to read request body", zap.Error(err))
+		s.logger.Error("Failed to read request body for corporate message",
+			zap.String("topic", topic),
+			zap.Error(err))
 		http.Error(w, `{"error": "Failed to read request body"}`, http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
+
+	s.logger.Info("Read corporate message body from HTTP request",
+		zap.String("topic", topic),
+		zap.Int("body_size", len(body)))
 
 	// Parse timestamp
 	var msgTimestamp time.Time
 	if timestamp != "" {
 		msgTimestamp, err = time.Parse(time.RFC3339, timestamp)
 		if err != nil {
-			s.logger.Warn("Invalid timestamp format, using current time",
+			s.logger.Warn("Invalid timestamp format for corporate message, using current time",
 				zap.String("timestamp", timestamp),
+				zap.String("topic", topic),
 				zap.Error(err))
 			msgTimestamp = time.Now().UTC()
 		}
@@ -561,6 +630,9 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 	// Generate message ID if not provided
 	if messageID == "" {
 		messageID = nats.GenerateID()
+		s.logger.Info("Generated message ID for corporate message",
+			zap.String("topic", topic),
+			zap.String("message_id", messageID))
 	}
 
 	// Set default source if not provided
@@ -580,23 +652,41 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 	headers["X-SMTS-API-Key"] = apiKey
 	headers["X-SMTS-Source"] = source
 
+	// Get client_sender from LDAP context
+	clientSender := ""
+	if userInfo, _ := userInfoFromContext(r.Context()); userInfo != nil {
+		clientSender = userInfo["uid"]
+	}
+
 	// For corporate messages (Flow 2), publish directly to external stream
 	// This avoids the client consumer processing loop and makes messages available for external clients
 	// Store only the actual content in the body to avoid duplication
 	externalMsg := &types.Message{
-		ID:        messageID,
-		Timestamp: msgTimestamp,
-		Topic:     "external." + topic,  // Use external subject pattern
-		Source:    source,
-		Headers:   headers,
-		Body:      body,  // Store only the actual content, not the full message structure
+		ID:           messageID,
+		Timestamp:    msgTimestamp,
+		Topic:        "external." + topic,  // Use external subject pattern
+		Source:       source,
+		ClientSender: clientSender,
+		Headers:      headers,
+		Body:         body,  // Store only the actual content, not the full message structure
 	}
+	
+	s.logger.Info("Publishing corporate message to external NATS stream",
+		zap.String("topic", topic),
+		zap.String("message_id", messageID),
+		zap.String("source", source),
+		zap.String("client_sender", clientSender),
+		zap.String("external_topic", externalMsg.Topic),
+		zap.String("stream", s.config.NATS.ExternalStream.Name),
+		zap.Time("message_timestamp", msgTimestamp))
 	
 	// Publish message directly to external stream
 	if err := s.publisher.PublishMessageToStream(externalMsg, s.config.NATS.ExternalStream.Name); err != nil {
 		s.logger.Error("Failed to publish corporate message to external stream",
 			zap.String("topic", topic),
 			zap.String("message_id", messageID),
+			zap.String("source", source),
+			zap.String("external_topic", externalMsg.Topic),
 			zap.Error(err))
 		http.Error(w, `{"error": "Failed to publish message to external stream"}`, http.StatusInternalServerError)
 		return
@@ -606,8 +696,10 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 		zap.String("topic", topic),
 		zap.String("message_id", messageID),
 		zap.String("source", source),
+		zap.String("client_sender", clientSender),
 		zap.String("external_topic", externalMsg.Topic),
-		zap.String("stream", s.config.NATS.ExternalStream.Name))
+		zap.String("stream", s.config.NATS.ExternalStream.Name),
+		zap.String("deployment", s.config.Deployment.Type))
 
 	// Return success response
 	response := map[string]interface{}{

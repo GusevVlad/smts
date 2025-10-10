@@ -37,6 +37,10 @@ func NewLDAPMiddleware(ldapConfig *types.LDAPConfig, logger *zap.Logger) *LDAPMi
 	var ldapClient LDAPClient
 
 	if ldapConfig.UseHTTP {
+		logger.Info("Creating HTTP LDAP client",
+			zap.String("host", ldapConfig.Host),
+			zap.Int("port", ldapConfig.Port),
+			zap.Bool("use_http", ldapConfig.UseHTTP))
 		// Use HTTP-based LDAP client
 		ldapClient = ldap.NewHTTPLDAPClient(
 			ldapConfig.Host,
@@ -47,8 +51,13 @@ func NewLDAPMiddleware(ldapConfig *types.LDAPConfig, logger *zap.Logger) *LDAPMi
 			ldapConfig.UserFilter,
 			ldapConfig.GroupFilter,
 			ldapConfig.Attributes,
+			logger,
 		)
 	} else {
+		logger.Info("Creating regular LDAP client",
+			zap.String("host", ldapConfig.Host),
+			zap.Int("port", ldapConfig.Port),
+			zap.Bool("use_http", ldapConfig.UseHTTP))
 		// Use regular LDAP client
 		ldapClient = &ldap.LDAPClient{
 			Attributes:         ldapConfig.Attributes,

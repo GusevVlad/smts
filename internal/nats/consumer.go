@@ -13,12 +13,13 @@ import (
 
 // Consumer represents a NATS JetStream consumer
 type Consumer struct {
-	client    *Client
-	config    *types.ConsumerConfig
-	stream    string
-	handler   MessageHandler
-	logger    *zap.Logger
+	client       *Client
+	config       *types.ConsumerConfig
+	stream       string
+	handler      MessageHandler
+	logger       *zap.Logger
 	subscription *nats.Subscription
+	deployment   string
 }
 
 // MessageHandler defines the interface for processing messages
@@ -27,13 +28,14 @@ type MessageHandler interface {
 }
 
 // NewConsumer creates a new NATS consumer
-func NewConsumer(client *Client, stream string, config *types.ConsumerConfig, handler MessageHandler, logger *zap.Logger) *Consumer {
+func NewConsumer(client *Client, stream string, config *types.ConsumerConfig, handler MessageHandler, logger *zap.Logger, deployment string) *Consumer {
 	return &Consumer{
-		client:  client,
-		config:  config,
-		stream:  stream,
-		handler: handler,
-		logger:  logger,
+		client:     client,
+		config:     config,
+		stream:     stream,
+		handler:    handler,
+		logger:     logger,
+		deployment: deployment,
 	}
 }
 
@@ -62,7 +64,8 @@ func (c *Consumer) Start(ctx context.Context) error {
 	c.subscription = sub
 	c.logger.Info("Consumer started",
 		zap.String("stream", c.stream),
-		zap.String("consumer", c.config.DurableName))
+		zap.String("consumer", c.config.DurableName),
+		zap.String("deployment", c.deployment))
 
 	// Start the pull consumer
 	go c.startPullConsumer(ctx)
@@ -82,9 +85,10 @@ func (c *Consumer) Stop() error {
 		c.subscription = nil
 	}
 
-	c.logger.Info("Consumer stopped", 
+	c.logger.Info("Consumer stopped",
 		zap.String("stream", c.stream),
-		zap.String("consumer", c.config.DurableName))
+		zap.String("consumer", c.config.DurableName),
+		zap.String("deployment", c.deployment))
 
 	return nil
 }
@@ -138,13 +142,15 @@ func (c *Consumer) getOrCreateConsumer() (nats.JetStreamContext, error) {
 			return nil, types.WrapSMTSError(err, types.ErrNATSConsumer, "Failed to create consumer")
 		}
 
-		c.logger.Info("Consumer created", 
+		c.logger.Info("Consumer created",
 			zap.String("stream", c.stream),
-			zap.String("consumer", c.config.DurableName))
+			zap.String("consumer", c.config.DurableName),
+			zap.String("deployment", c.deployment))
 	} else {
-		c.logger.Info("Using existing consumer", 
+		c.logger.Info("Using existing consumer",
 			zap.String("stream", c.stream),
-			zap.String("consumer", c.config.DurableName))
+			zap.String("consumer", c.config.DurableName),
+			zap.String("deployment", c.deployment))
 	}
 
 	return js, nil
@@ -154,6 +160,12 @@ func (c *Consumer) getOrCreateConsumer() (nats.JetStreamContext, error) {
 func (c *Consumer) handleMessage(msg *nats.Msg) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	c.logger.Info("Received message from NATS",
+		zap.String("subject", msg.Subject),
+		zap.String("stream", c.stream),
+		zap.String("consumer", c.config.DurableName),
+		zap.String("deployment", c.deployment))
 
 	// Parse the message
 	smtsMsg, err := c.parseMessage(msg)
@@ -169,6 +181,14 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 		return
 	}
 
+	c.logger.Info("Parsed NATS message successfully",
+		zap.String("message_id", smtsMsg.ID),
+		zap.String("topic", smtsMsg.Topic),
+		zap.String("source", smtsMsg.Source),
+		zap.String("client_sender", smtsMsg.ClientSender),
+		zap.Time("message_timestamp", smtsMsg.Timestamp),
+		zap.String("deployment", c.deployment))
+
 	// Process the message
 	result, err := c.handler.HandleMessage(ctx, smtsMsg)
 	if err != nil {
@@ -179,11 +199,19 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 
 		// Check if we should retry or nack the message
 		if types.IsRetryableError(err) {
+			c.logger.Info("Message processing failed with retryable error, nacking for retry",
+				zap.String("message_id", smtsMsg.ID),
+				zap.String("topic", smtsMsg.Topic),
+				zap.String("deployment", c.deployment))
 			// Nack with delay for retryable errors
 			if nackErr := msg.NakWithDelay(10 * time.Second); nackErr != nil {
 				c.logger.Error("Failed to nack message", zap.Error(nackErr))
 			}
 		} else {
+			c.logger.Info("Message processing failed with non-retryable error, acking to avoid reprocessing",
+				zap.String("message_id", smtsMsg.ID),
+				zap.String("topic", smtsMsg.Topic),
+				zap.String("deployment", c.deployment))
 			// Ack non-retryable errors to avoid reprocessing
 			if ackErr := msg.Ack(); ackErr != nil {
 				c.logger.Error("Failed to ack failed message", zap.Error(ackErr))
@@ -199,9 +227,11 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 				zap.Error(err),
 				zap.String("message_id", smtsMsg.ID))
 		} else {
-			c.logger.Debug("Message processed successfully",
+			c.logger.Info("Message processed successfully and acknowledged",
 				zap.String("message_id", smtsMsg.ID),
-				zap.String("topic", smtsMsg.Topic))
+				zap.String("topic", smtsMsg.Topic),
+				zap.String("source", smtsMsg.Source),
+				zap.String("deployment", c.deployment))
 		}
 	} else {
 		// Message processing failed but we want to ack to avoid reprocessing
@@ -210,10 +240,11 @@ func (c *Consumer) handleMessage(msg *nats.Msg) {
 				zap.Error(err),
 				zap.String("message_id", smtsMsg.ID))
 		}
-		c.logger.Warn("Message processing failed",
+		c.logger.Warn("Message processing completed with failure",
 			zap.String("message_id", smtsMsg.ID),
 			zap.String("topic", smtsMsg.Topic),
-			zap.String("error", result.Error))
+			zap.String("error", result.Error),
+			zap.String("deployment", c.deployment))
 	}
 }
 
@@ -222,6 +253,10 @@ func (c *Consumer) startPullConsumer(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			c.logger.Info("Pull consumer stopping due to context cancellation",
+				zap.String("stream", c.stream),
+				zap.String("consumer", c.config.DurableName),
+				zap.String("deployment", c.deployment))
 			return nil
 		default:
 			// Fetch messages from the pull subscription with a longer timeout
@@ -237,6 +272,12 @@ func (c *Consumer) startPullConsumer(ctx context.Context) error {
 				time.Sleep(5 * time.Second)
 				continue
 			}
+
+			c.logger.Info("Fetched messages from NATS stream",
+				zap.Int("message_count", len(msgs)),
+				zap.String("stream", c.stream),
+				zap.String("consumer", c.config.DurableName),
+				zap.String("deployment", c.deployment))
 
 			// Process each message
 			for _, msg := range msgs {
