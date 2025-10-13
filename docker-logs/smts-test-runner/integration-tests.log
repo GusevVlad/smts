@@ -1,0 +1,37 @@
+Running Docker integration tests...
+=== RUN   TestDocker_MessageFlow_EXT_to_INT
+=== RUN   TestDocker_MessageFlow_EXT_to_INT/ServiceHealthChecks
+=== RUN   TestDocker_MessageFlow_EXT_to_INT/SendMessageToEXT
+=== RUN   TestDocker_MessageFlow_EXT_to_INT/CheckMessageTransportToINT
+    docker_message_flow_test.go:135: ✅ Message successfully transported to INT SMTS via Corporate API and ArtemisMQ! (received: 1)
+--- PASS: TestDocker_MessageFlow_EXT_to_INT (5.04s)
+    --- PASS: TestDocker_MessageFlow_EXT_to_INT/ServiceHealthChecks (0.01s)
+    --- PASS: TestDocker_MessageFlow_EXT_to_INT/SendMessageToEXT (0.01s)
+    --- PASS: TestDocker_MessageFlow_EXT_to_INT/CheckMessageTransportToINT (5.02s)
+=== RUN   TestDocker_MessageFlow_INT_to_EXT
+=== RUN   TestDocker_MessageFlow_INT_to_EXT/SendMessageToINT
+=== RUN   TestDocker_MessageFlow_INT_to_EXT/CheckMessageTransportToEXT
+    docker_message_flow_test.go:241: ✅ Message successfully transported to EXT SMTS via ArtemisMQ and Corporate API! (received: 1)
+--- PASS: TestDocker_MessageFlow_INT_to_EXT (5.03s)
+    --- PASS: TestDocker_MessageFlow_INT_to_EXT/SendMessageToINT (0.01s)
+    --- PASS: TestDocker_MessageFlow_INT_to_EXT/CheckMessageTransportToEXT (5.02s)
+=== RUN   TestDocker_MessageFlow_Bidirectional
+=== RUN   TestDocker_MessageFlow_Bidirectional/EXT_to_INT_Flow
+=== RUN   TestDocker_MessageFlow_Bidirectional/EXT_to_INT_Flow/ServiceHealthChecks
+=== RUN   TestDocker_MessageFlow_Bidirectional/EXT_to_INT_Flow/SendMessageToEXT
+=== RUN   TestDocker_MessageFlow_Bidirectional/EXT_to_INT_Flow/CheckMessageTransportToINT
+    docker_message_flow_test.go:135: ✅ Message successfully transported to INT SMTS via Corporate API and ArtemisMQ! (received: 1)
+=== RUN   TestDocker_MessageFlow_Bidirectional/INT_to_EXT_Flow
+=== RUN   TestDocker_MessageFlow_Bidirectional/INT_to_EXT_Flow/SendMessageToINT
+=== RUN   TestDocker_MessageFlow_Bidirectional/INT_to_EXT_Flow/CheckMessageTransportToEXT
+    docker_message_flow_test.go:241: ✅ Message successfully transported to EXT SMTS via ArtemisMQ and Corporate API! (received: 1)
+--- PASS: TestDocker_MessageFlow_Bidirectional (10.05s)
+    --- PASS: TestDocker_MessageFlow_Bidirectional/EXT_to_INT_Flow (5.02s)
+        --- PASS: TestDocker_MessageFlow_Bidirectional/EXT_to_INT_Flow/ServiceHealthChecks (0.01s)
+        --- PASS: TestDocker_MessageFlow_Bidirectional/EXT_to_INT_Flow/SendMessageToEXT (0.00s)
+        --- PASS: TestDocker_MessageFlow_Bidirectional/EXT_to_INT_Flow/CheckMessageTransportToINT (5.01s)
+    --- PASS: TestDocker_MessageFlow_Bidirectional/INT_to_EXT_Flow (5.03s)
+        --- PASS: TestDocker_MessageFlow_Bidirectional/INT_to_EXT_Flow/SendMessageToINT (0.01s)
+        --- PASS: TestDocker_MessageFlow_Bidirectional/INT_to_EXT_Flow/CheckMessageTransportToEXT (5.02s)
+PASS
+ok  	smts/tests/integration	20.127s

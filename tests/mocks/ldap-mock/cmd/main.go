@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 )
 
@@ -283,26 +282,20 @@ func (s *LDAPMockServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	// Get port from environment or use default
-	port := os.Getenv("LDAP_MOCK_PORT")
-	if port == "" {
-		port = "1389"
-	}
+	port := GetEnvWithDefault("LDAP_MOCK_PORT", "1389")
 
 	// Start LDAP mock server
 	server := NewLDAPMockServer()
 
-	// Setup HTTP routes
-	http.HandleFunc("/auth", server.handleAuth)
-	http.HandleFunc("/search", server.handleSearch)
-	http.HandleFunc("/health", server.handleHealth)
+	// Setup routes
+	routes := map[string]http.HandlerFunc{
+		"/auth":   server.handleAuth,
+		"/search": server.handleSearch,
+		"/health": HealthHandler("ldap-mock"),
+	}
 
-	log.Printf("LDAP Mock Server starting on port %s", port)
-	log.Printf("Available endpoints:")
-	log.Printf("  POST /auth - Authenticate user")
-	log.Printf("  POST /search - Search users/groups")
-	log.Printf("  GET /health - Health check")
-
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	// Start server
+	if err := StartServer(port, "LDAP Mock Server", routes); err != nil {
 		log.Fatalf("Failed to start LDAP mock server: %v", err)
 	}
 }

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
@@ -92,8 +91,7 @@ func (h *HealthServer) IsHealthy() bool {
 
 // healthHandler handles the main health check endpoint
 func (h *HealthServer) healthHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !RequireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -102,9 +100,6 @@ func (h *HealthServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 	if !healthy {
 		status = http.StatusServiceUnavailable
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
 
 	response := map[string]interface{}{
 		"status":    getStatusText(healthy),
@@ -122,21 +117,12 @@ func (h *HealthServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 	healthChecks := h.performHealthChecks(r.Context())
 	response["checks"] = healthChecks
 
-	// Marshal response
-	jsonResponse, err := json.Marshal(response)
-	if err != nil {
-		h.logger.Error("Failed to marshal health response", zap.Error(err))
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(jsonResponse)
+	JSONSuccess(w, response, status)
 }
 
 // metricsHandler handles metrics endpoint (placeholder for future metrics)
 func (h *HealthServer) metricsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !RequireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -147,8 +133,7 @@ func (h *HealthServer) metricsHandler(w http.ResponseWriter, r *http.Request) {
 
 // readyHandler handles readiness probe
 func (h *HealthServer) readyHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !RequireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -164,8 +149,7 @@ func (h *HealthServer) readyHandler(w http.ResponseWriter, r *http.Request) {
 
 // liveHandler handles liveness probe
 func (h *HealthServer) liveHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !RequireMethod(w, r, http.MethodGet) {
 		return
 	}
 

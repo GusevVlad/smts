@@ -1,6 +1,0 @@
-/bin
-/docker-logs
-/docker-logs/*
-/test-results
-docker-logs/smts-test-runner/integration-tests.log
-docker-logs/smts-test-runner/unit-tests.log

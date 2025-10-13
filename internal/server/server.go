@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -789,6 +790,32 @@ func (s *Server) createExternalConsumer() error {
 	s.logger.Info("External consumer created for message API",
 		zap.String("stream", s.config.NATS.ExternalStream.Name),
 		zap.String("consumer", s.config.NATS.ExternalConsumer.DurableName))
+
+	return nil
+}
+
+// RunServer is a shared utility function that handles the common main logic
+// for both EXT and INT SMTS servers
+func RunServer(configPath string, serverType string) error {
+	// Parse command line flags
+	healthCheck := flag.Bool("health-check", false, "Perform quick health check and exit")
+	flag.Parse()
+
+	// Handle health check mode
+	if *healthCheck {
+		if err := QuickHealthCheck(configPath); err != nil {
+			fmt.Printf("Health check failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Health check passed")
+		os.Exit(0)
+	}
+
+	// Run the server
+	if err := Run(configPath); err != nil {
+		fmt.Printf("Failed to start %s SMTS server: %v\n", strings.ToUpper(serverType), err)
+		os.Exit(1)
+	}
 
 	return nil
 }

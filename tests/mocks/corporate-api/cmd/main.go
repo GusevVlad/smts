@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -315,36 +314,12 @@ func (api *CorporateAPI) processArtemisMessage(msg *stomp.Message) error {
 
 func main() {
 	// Configuration
-	artemisURL := os.Getenv("ARTEMIS_URL")
-	if artemisURL == "" {
-		artemisURL = "artemis-test:61613"
-	}
-
-	extSMTSURL := os.Getenv("EXT_SMTS_URL")
-	if extSMTSURL == "" {
-		extSMTSURL = "http://smts-ext-test:18082"
-	}
-
-	queueName := os.Getenv("ARTEMIS_QUEUE")
-	if queueName == "" {
-		queueName = "SMTS_INT_TEST_QUEUE"
-	}
-
-	// LDAP authentication for EXT-SMTS
-	ldapUsername := os.Getenv("LDAP_USERNAME")
-	if ldapUsername == "" {
-		ldapUsername = "testuser" // Default test user
-	}
-
-	ldapPassword := os.Getenv("LDAP_PASSWORD")
-	if ldapPassword == "" {
-		ldapPassword = "testpass" // Default test password
-	}
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	artemisURL := GetEnvWithDefault("ARTEMIS_URL", "artemis-test:61613")
+	extSMTSURL := GetEnvWithDefault("EXT_SMTS_URL", "http://smts-ext-test:18082")
+	queueName := GetEnvWithDefault("ARTEMIS_QUEUE", "SMTS_INT_TEST_QUEUE")
+	ldapUsername := GetEnvWithDefault("LDAP_USERNAME", "testuser")
+	ldapPassword := GetEnvWithDefault("LDAP_PASSWORD", "testpass")
+	port := GetEnvWithDefault("PORT", "8080")
 
 	// Initialize corporate API
 	api, err := NewCorporateAPI(artemisURL, extSMTSURL, queueName, ldapUsername, ldapPassword)
@@ -356,20 +331,19 @@ func main() {
 	// Start consuming messages from ArtemisMQ for Flow 2
 	api.StartMessageConsumer()
 
-	// Setup HTTP routes
-	http.HandleFunc("/health", api.HealthCheck)
-	
-	// Flow 1: EXT → INT - Corporate API receives from EXT-SMTS
-	// Handle any topic dynamically using a catch-all handler
-	http.HandleFunc("/", api.HandleRoot)
-	
+	// Setup routes
+	routes := map[string]http.HandlerFunc{
+		"/health": HealthHandler("corporate-api"),
+		"/":       api.HandleRoot,
+	}
 
-	log.Printf("Corporate API server starting on port %s", port)
+	// Log additional startup information
 	log.Printf("ArtemisMQ URL: %s", artemisURL)
 	log.Printf("EXT-SMTS URL: %s", extSMTSURL)
 	log.Printf("Artemis Queue: %s", queueName)
 
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	// Start server
+	if err := StartServer(port, "Corporate API Server", routes); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

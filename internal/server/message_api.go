@@ -99,11 +99,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 		zap.String("path", r.URL.Path),
 		zap.String("deployment", m.config.Deployment.Type))
 
-	if r.Method != http.MethodGet {
-		m.logger.Warn("Invalid HTTP method for message API endpoint",
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path))
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !RequireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -114,7 +110,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	if topic == "" {
 		m.logger.Warn("Missing topic parameter in message API request",
 			zap.String("path", r.URL.Path))
-		http.Error(w, `{"error": "topic parameter is required"}`, http.StatusBadRequest)
+		JSONError(w, "topic parameter is required", http.StatusBadRequest)
 		return
 	}
 
@@ -127,7 +123,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 		m.logger.Warn("LDAP authorization denied for read endpoint",
 			zap.String("topic", topic),
 			zap.String("deployment", m.config.Deployment.Type))
-		http.Error(w, `{"error": "Access denied - insufficient permissions"}`, http.StatusForbidden)
+		JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
 		return
 	}
 
@@ -139,7 +135,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 				zap.String("topic", topic),
 				zap.String("count", countStr),
 				zap.Error(err))
-			http.Error(w, `{"error": "count must be a positive integer"}`, http.StatusBadRequest)
+			JSONError(w, "count must be a positive integer", http.StatusBadRequest)
 			return
 		} else {
 			count = parsedCount
@@ -156,19 +152,18 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 		zap.Int("requested_count", count),
 		zap.String("deployment", m.config.Deployment.Type))
 
-	w.Header().Set("Content-Type", "application/json")
 
 	// Check if NATS client is available
 	if m.natsClient == nil {
 		m.logger.Error("NATS client not available for message API")
-		http.Error(w, `{"error": "Message API not properly initialized"}`, http.StatusInternalServerError)
+		JSONError(w, "Message API not properly initialized", http.StatusInternalServerError)
 		return
 	}
 
 	js := m.natsClient.GetJetStream()
 	if js == nil {
 		m.logger.Error("JetStream context not available")
-		http.Error(w, `{"error": "JetStream not available"}`, http.StatusInternalServerError)
+		JSONError(w, "JetStream not available", http.StatusInternalServerError)
 		return
 	}
 
@@ -194,7 +189,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 			zap.String("consumer", consumerName),
 			zap.String("topic", topic),
 			zap.Error(err))
-		http.Error(w, `{"error": "Failed to access message stream consumer"}`, http.StatusInternalServerError)
+		JSONError(w, "Failed to access message stream consumer", http.StatusInternalServerError)
 		return
 	}
 
@@ -207,7 +202,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 			zap.String("external_topic", externalTopic),
 			zap.String("consumer", consumerName),
 			zap.Error(err))
-		http.Error(w, `{"error": "Failed to subscribe to messages"}`, http.StatusInternalServerError)
+		JSONError(w, "Failed to subscribe to messages", http.StatusInternalServerError)
 		return
 	}
 	defer sub.Unsubscribe()
@@ -224,7 +219,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 			zap.String("topic", topic),
 			zap.Int("requested_count", count),
 			zap.Error(err))
-		http.Error(w, `{"error": "Failed to fetch messages"}`, http.StatusInternalServerError)
+		JSONError(w, "Failed to fetch messages", http.StatusInternalServerError)
 		return
 	}
 
@@ -304,29 +299,17 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 		"api":        "message-api",
 	}
 
-	jsonResponse, err := json.MarshalIndent(response, "", "  ")
-	if err != nil {
-		m.logger.Error("Failed to marshal messages response",
-			zap.String("topic", topic),
-			zap.Int("message_count", len(messages)),
-			zap.Error(err))
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
 	m.logger.Info("Message API request completed successfully",
 		zap.String("topic", topic),
 		zap.Int("message_count", len(messages)),
 		zap.String("deployment", m.config.Deployment.Type))
 
-	w.WriteHeader(http.StatusOK)
-	w.Write(jsonResponse)
+	JSONSuccess(w, response, http.StatusOK)
 }
 
 // sendHandler handles message sending endpoint (for testing)
 func (m *MessageAPIServer) sendHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !RequireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -335,13 +318,12 @@ func (m *MessageAPIServer) sendHandler(w http.ResponseWriter, r *http.Request) {
 		Message map[string]interface{} `json:"message"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, `{"error": "Invalid JSON"}`, http.StatusBadRequest)
+	if !RequireJSONBody(w, r, &request) {
 		return
 	}
 
 	if request.Topic == "" {
-		http.Error(w, `{"error": "topic is required"}`, http.StatusBadRequest)
+		JSONError(w, "topic is required", http.StatusBadRequest)
 		return
 	}
 
@@ -353,8 +335,6 @@ func (m *MessageAPIServer) sendHandler(w http.ResponseWriter, r *http.Request) {
 		"deployment": m.config.Deployment.Type,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	JSONSuccess(w, response, http.StatusOK)
 }
 
