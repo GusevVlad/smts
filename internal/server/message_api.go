@@ -94,10 +94,17 @@ func (m *MessageAPIServer) Stop() error {
 
 // messagesHandler handles message retrieval endpoint
 func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Request) {
+	// Get client_receiver from LDAP context
+	clientReceiver := ""
+	if userInfo, _ := userInfoFromContext(r.Context()); userInfo != nil {
+		clientReceiver = userInfo["uid"]
+	}
+
 	m.logger.Info("Received message API request",
 		zap.String("method", r.Method),
 		zap.String("path", r.URL.Path),
-		zap.String("deployment", m.config.Deployment.Type))
+		zap.String("deployment", m.config.Deployment.Type),
+		zap.String("client_receiver", clientReceiver))
 
 	if !RequireMethod(w, r, http.MethodGet) {
 		return
@@ -116,13 +123,15 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 
 	m.logger.Info("Processing message API request for topic",
 		zap.String("topic", topic),
-		zap.String("deployment", m.config.Deployment.Type))
+		zap.String("deployment", m.config.Deployment.Type),
+		zap.String("client_receiver", clientReceiver))
 
 	// Check LDAP authorization for reading messages
 	if m.ldapMiddleware != nil && !m.ldapMiddleware.AuthorizeEndpoint(r, m.config.Deployment.Type, "read") {
 		m.logger.Warn("LDAP authorization denied for read endpoint",
 			zap.String("topic", topic),
 			zap.String("deployment", m.config.Deployment.Type))
+			zap.String("client_receiver", clientReceiver)
 		JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
 		return
 	}
@@ -188,6 +197,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 			zap.String("stream", streamName),
 			zap.String("consumer", consumerName),
 			zap.String("topic", topic),
+			zap.String("client_receiver", clientReceiver),
 			zap.Error(err))
 		JSONError(w, "Failed to access message stream consumer", http.StatusInternalServerError)
 		return
@@ -287,7 +297,8 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 		zap.String("topic", topic),
 		zap.Int("requested", count),
 		zap.Int("received", received),
-		zap.String("deployment", m.config.Deployment.Type))
+		zap.String("deployment", m.config.Deployment.Type),
+		zap.String("client_receiver", clientReceiver))
 
 	response := map[string]interface{}{
 		"topic":      topic,
@@ -302,7 +313,8 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	m.logger.Info("Message API request completed successfully",
 		zap.String("topic", topic),
 		zap.Int("message_count", len(messages)),
-		zap.String("deployment", m.config.Deployment.Type))
+		zap.String("deployment", m.config.Deployment.Type),
+		zap.String("client_receiver", clientReceiver))
 
 	JSONSuccess(w, response, http.StatusOK)
 }
