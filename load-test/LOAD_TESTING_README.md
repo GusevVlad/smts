@@ -333,27 +333,14 @@ jobs:
           path: report.html
 ```
 
-## File Structure
+# Calculate basic RPS
+./performance-monitor.sh rps report/performance-metrics.csv
 
-```
-.
-├── load-test-suite.sh          # Main load test script
-├── load-test-config.sh         # Configuration file
-├── performance-monitor.sh      # Performance monitoring utilities
-├── LOAD_TESTING_README.md      # This documentation
-├── performance-metrics.csv     # Generated performance metrics (output)
-├── performance-report-*.html   # Generated HTML reports (output)
-└── system-metrics-*.csv        # System resource metrics (output)
-```
+# Analyze RPS trends with 30-second intervals
+./performance-monitor.sh rps-trend metrics.csv 30
 
-## Support
+# Use dedicated RPS calculator
+./rps-calculator.sh all report/performance-metrics.csv 60
 
-For issues and questions:
-1. Check the troubleshooting section above
-2. Verify all prerequisites are met
-3. Review test configuration settings
-4. Check service health and logs
-
-## License
-
-This load testing suite is provided as part of the SMTS project.
+# Compare RPS between test runs
+./rps-calculator.sh compare baseline.csv current.csv

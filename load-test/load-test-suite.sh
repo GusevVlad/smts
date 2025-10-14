@@ -502,6 +502,36 @@ run_message_flow_test() {
     return $flow_failures
 }
 
+# Function to calculate RPS from metrics
+calculate_rps_from_metrics() {
+    local metrics_file="$1"
+    
+    if [ ! -f "$metrics_file" ]; then
+        echo "0"
+        return
+    fi
+    
+    local total_requests=$(tail -n +2 "$metrics_file" | wc -l)
+    local first_timestamp=$(tail -n +2 "$metrics_file" | head -1 | cut -d',' -f1)
+    local last_timestamp=$(tail -n +2 "$metrics_file" | tail -1 | cut -d',' -f1)
+    
+    # Convert timestamps to epoch seconds
+    local first_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$first_timestamp" "+%s" 2>/dev/null || echo "0")
+    local last_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$last_timestamp" "+%s" 2>/dev/null || echo "0")
+    
+    local test_duration=0
+    if [ "$first_epoch" -gt 0 ] && [ "$last_epoch" -gt 0 ]; then
+        test_duration=$((last_epoch - first_epoch))
+    fi
+    
+    local rps=0
+    if [ "$test_duration" -gt 0 ]; then
+        rps=$(echo "scale=2; $total_requests / $test_duration" | bc -l)
+    fi
+    
+    echo "$rps"
+}
+
 # Function to generate performance report
 generate_performance_report() {
     print_info "Generating performance report..."
@@ -534,6 +564,12 @@ generate_performance_report() {
         echo "Success Rate: ${success_rate}%"
         echo
         
+        # Calculate RPS
+        local rps=$(calculate_rps_from_metrics "$PERFORMANCE_METRICS_FILE")
+        echo "--- RPS (Requests Per Second) ---"
+        echo "Overall RPS: ${rps}"
+        echo
+        
         # Calculate response time statistics
         echo "--- Response Time Statistics (seconds) ---"
         local response_times=$(tail -n +2 "$PERFORMANCE_METRICS_FILE" | cut -d',' -f4)
@@ -564,6 +600,12 @@ generate_performance_report() {
     } > "$report_file"
     
     print_success "Performance report generated: $report_file"
+    
+    # Also generate RPS-specific analysis
+    print_info "Generating RPS analysis..."
+    local rps_report_file="$REPORT_DIR/rps-analysis-$(date +%Y%m%d-%H%M%S).txt"
+    "$SCRIPT_DIR/performance-monitor.sh" rps "$PERFORMANCE_METRICS_FILE" > "$rps_report_file"
+    print_success "RPS analysis generated: $rps_report_file"
 }
 
 # Function to clean up old reports

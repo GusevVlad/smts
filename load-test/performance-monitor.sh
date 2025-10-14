@@ -538,11 +538,141 @@ EOF
     print_success "Performance dashboard created: $dashboard_file"
 }
 
+# Function to calculate RPS (Requests Per Second) from metrics
+calculate_rps() {
+    local metrics_file="${1:-performance-metrics.csv}"
+    
+    if [ ! -f "$metrics_file" ]; then
+        print_error "Metrics file not found: $metrics_file"
+        return 1
+    fi
+    
+    print_info "Calculating RPS from: $metrics_file"
+    
+    # Extract timestamps and calculate time range
+    local timestamps=$(tail -n +2 "$metrics_file" | cut -d',' -f1)
+    local first_timestamp=$(echo "$timestamps" | head -1)
+    local last_timestamp=$(echo "$timestamps" | tail -1)
+    
+    # Convert timestamps to epoch seconds for calculation
+    local first_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$first_timestamp" "+%s" 2>/dev/null || echo "0")
+    local last_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$last_timestamp" "+%s" 2>/dev/null || echo "0")
+    
+    local total_requests=$(tail -n +2 "$metrics_file" | wc -l)
+    local test_duration=0
+    
+    if [ "$first_epoch" -gt 0 ] && [ "$last_epoch" -gt 0 ]; then
+        test_duration=$((last_epoch - first_epoch))
+    fi
+    
+    local rps=0
+    if [ "$test_duration" -gt 0 ]; then
+        rps=$(echo "scale=2; $total_requests / $test_duration" | bc -l)
+    fi
+    
+    echo "=== RPS (Requests Per Second) Analysis ==="
+    echo "Total Requests: $total_requests"
+    echo "Test Duration: ${test_duration}s"
+    echo "Overall RPS: ${rps}"
+    echo
+    
+    # Calculate RPS by minute intervals
+    if [ "$test_duration" -gt 60 ]; then
+        echo "=== RPS by Minute Intervals ==="
+        
+        # Group requests by minute
+        local current_minute=""
+        local minute_count=0
+        
+        while IFS=, read -r timestamp operation http_code response_time time_total time_connect time_starttransfer; do
+            local minute=$(echo "$timestamp" | cut -d':' -f1-2)  # Get YYYY-MM-DDTHH:MM
+            
+            if [ "$minute" != "$current_minute" ]; then
+                if [ -n "$current_minute" ] && [ "$minute_count" -gt 0 ]; then
+                    echo "$current_minute: $minute_count requests"
+                fi
+                current_minute="$minute"
+                minute_count=1
+            else
+                ((minute_count++))
+            fi
+        done < <(tail -n +2 "$metrics_file")
+        
+        # Print the last minute
+        if [ -n "$current_minute" ] && [ "$minute_count" -gt 0 ]; then
+            echo "$current_minute: $minute_count requests"
+        fi
+        echo
+    fi
+    
+    # Calculate RPS by operation type
+    echo "=== RPS by Operation Type ==="
+    for operation in EXT_SEND INT_SEND EXT_RECEIVE INT_RECEIVE; do
+        local op_requests=$(tail -n +2 "$metrics_file" | grep ",$operation," | wc -l)
+        local op_rps=0
+        if [ "$test_duration" -gt 0 ] && [ "$op_requests" -gt 0 ]; then
+            op_rps=$(echo "scale=2; $op_requests / $test_duration" | bc -l)
+        fi
+        echo "$operation: ${op_rps} RPS ($op_requests requests)"
+    done
+}
+
+# Function to generate RPS trend analysis
+analyze_rps_trend() {
+    local metrics_file="${1:-performance-metrics.csv}"
+    local interval="${2:-60}"  # Default 60-second intervals
+    
+    if [ ! -f "$metrics_file" ]; then
+        print_error "Metrics file not found: $metrics_file"
+        return 1
+    fi
+    
+    print_info "Analyzing RPS trend with ${interval}s intervals"
+    
+    # Convert first and last timestamps to epoch
+    local first_timestamp=$(tail -n +2 "$metrics_file" | head -1 | cut -d',' -f1)
+    local last_timestamp=$(tail -n +2 "$metrics_file" | tail -1 | cut -d',' -f1)
+    
+    local first_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$first_timestamp" "+%s" 2>/dev/null || echo "0")
+    local last_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$last_timestamp" "+%s" 2>/dev/null || echo "0")
+    
+    if [ "$first_epoch" -eq 0 ] || [ "$last_epoch" -eq 0 ]; then
+        print_error "Could not parse timestamps for trend analysis"
+        return 1
+    fi
+    
+    local total_duration=$((last_epoch - first_epoch))
+    local intervals=$((total_duration / interval))
+    
+    echo "=== RPS Trend Analysis (${interval}s intervals) ==="
+    echo "Total duration: ${total_duration}s"
+    echo "Number of intervals: $intervals"
+    echo
+    
+    for ((i=0; i<=intervals; i++)); do
+        local interval_start=$((first_epoch + (i * interval)))
+        local interval_end=$((interval_start + interval))
+        
+        local interval_requests=$(tail -n +2 "$metrics_file" | while IFS=, read -r timestamp operation http_code response_time time_total time_connect time_starttransfer; do
+            local request_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$timestamp" "+%s" 2>/dev/null || echo "0")
+            if [ "$request_epoch" -ge "$interval_start" ] && [ "$request_epoch" -lt "$interval_end" ]; then
+                echo "1"
+            fi
+        done | wc -l)
+        
+        local interval_rps=$(echo "scale=2; $interval_requests / $interval" | bc -l)
+        local interval_time=$(date -j -f "%s" "$interval_start" "+%H:%M:%S" 2>/dev/null || echo "N/A")
+        
+        echo "Interval $((i+1)) ($interval_time): ${interval_rps} RPS ($interval_requests requests)"
+    done
+}
+
 # Main function
 main() {
     local command="$1"
     local param1="$2"
     local param2="$3"
+    local param3="$4"
     
     case "$command" in
         "analyze")
@@ -560,8 +690,14 @@ main() {
         "dashboard")
             create_performance_dashboard "$param1" "$param2"
             ;;
+        "rps")
+            calculate_rps "$param1"
+            ;;
+        "rps-trend")
+            analyze_rps_trend "$param1" "$param2"
+            ;;
         *)
-            echo "Usage: $0 {analyze|html-report|monitor-system|compare|dashboard} [parameters]"
+            echo "Usage: $0 {analyze|html-report|monitor-system|compare|dashboard|rps|rps-trend} [parameters]"
             echo
             echo "Commands:"
             echo "  analyze [metrics_file]              - Analyze performance metrics"
@@ -569,6 +705,8 @@ main() {
             echo "  monitor-system [duration] [interval] [output] - Monitor system resources"
             echo "  compare [baseline] [current] [output] - Compare performance runs"
             echo "  dashboard [metrics_file] [output]   - Create performance dashboard"
+            echo "  rps [metrics_file]                  - Calculate RPS (Requests Per Second)"
+            echo "  rps-trend [metrics_file] [interval] - Analyze RPS trend over time"
             echo
             echo "Examples:"
             echo "  $0 analyze performance-metrics.csv"
@@ -576,6 +714,8 @@ main() {
             echo "  $0 monitor-system 300 10 system.csv"
             echo "  $0 compare baseline.csv current.csv"
             echo "  $0 dashboard metrics.csv dashboard.html"
+            echo "  $0 rps performance-metrics.csv"
+            echo "  $0 rps-trend metrics.csv 30"
             ;;
     esac
 }
