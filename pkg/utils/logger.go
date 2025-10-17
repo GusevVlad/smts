@@ -60,6 +60,8 @@ func parseLogLevel(level string) zapcore.Level {
 		return zapcore.FatalLevel
 	case "panic":
 		return zapcore.PanicLevel
+	case "security_warning":
+		return zapcore.WarnLevel // Use WarnLevel for security warnings but with special handling
 	default:
 		return zapcore.InfoLevel
 	}
@@ -96,4 +98,28 @@ func WithRetryCount(count int) zap.Field {
 // WithDuration adds duration to logger fields
 func WithDuration(duration int64) zap.Field {
 	return zap.Int64("duration_ms", duration)
+}
+
+// SecurityWarningFields creates logger fields specifically for security warnings
+func SecurityWarningFields(operation, deployment, messageID, topic, clientSender string, securityEvent string) []zap.Field {
+	fields := []zap.Field{
+		zap.String("operation", operation),
+		zap.String("deployment", deployment),
+		zap.String("security_event", securityEvent),
+		zap.String("log_type", "SECURITY_WARNING"),
+	}
+
+	if messageID != "" {
+		fields = append(fields, zap.String("message_id", messageID))
+	}
+
+	if topic != "" {
+		fields = append(fields, zap.String("topic", topic))
+	}
+
+	if clientSender != "" {
+		fields = append(fields, zap.String("client_sender", clientSender))
+	}
+
+	return fields
 }

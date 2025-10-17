@@ -1,3 +1,8 @@
 /load-test/report/
 .DS_Store
 /docker-logs/
+ext-smts
+.gitignore
+int-smts
+integration.test
+

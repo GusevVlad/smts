@@ -190,7 +190,7 @@ func (p *Processor) processINTMessageToArtemis(ctx context.Context, msg *types.M
 
 		if !dlpResult.Approved {
 			p.logger.Warn("Message rejected by DLP validation",
-				append(utils.LoggerFields("dlp_validation", p.deployment, msg.ID, msg.Topic),
+				append(utils.SecurityWarningFields("dlp_validation", p.deployment, msg.ID, msg.Topic, msg.ClientSender, "dlp_rejection"),
 					zap.Strings("rejection_reasons", dlpResult.Reasons))...)
 			return &types.DeliveryResult{
 				Success:    false,

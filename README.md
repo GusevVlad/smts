@@ -33,25 +33,26 @@ SMTS implements bidirectional message flows between EXT and INT networks with du
 sequenceDiagram
     participant EC as EXT Client
     participant ES as EXT-SMTS
-    participant EN as EXT NATS (Embedded)
+    participant EN as EXT NATS Stream
     participant CA as Corporate API Server
     participant AM as ArtemisMQ
     participant IS as INT-SMTS
-    participant IN as INT NATS (Embedded)
+    participant IN as INT NATS Stream
     participant IC as INT Client
 
     Note over EC,IC: EXT → INT Flow
     EC->>ES: POST /send/{topic_name}
-    ES->>EN: Place in output queue (grouped by topic)
-    EN->>ES: FIFO message delivery
-    ES->>CA: POST /topic_name (FIFO order)
+    ES->>ES: LDAP Auth & Authorization
+    ES->>EN: Publish to SMTS_EXT stream
+    EN->>ES: Pull consumer processes message
+    ES->>CA: POST /topic_name
     CA->>AM: Push to ArtemisMQ queue
-    AM->>IS: INT-SMTS pulls from ArtemisMQ
-    IS->>IN: Collect in input queue (grouped by topic)
+    AM->>IS: INT-SMTS consumes from ArtemisMQ
+    IS->>IN: Publish to SMTS_INT stream
     IC->>IS: GET /receive/{topic_name}?count=n
-    IS->>IC: Return messages
-    IC->>IS: POST /confirm/{topic_name} (confirm receipt)
-    IS->>IN: Delete confirmed messages from NATS
+    IS->>IC: Return messages from NATS stream
+    IC->>IS: POST /confirm/{topic_name}
+    IS->>IN: Acknowledge message deletion
 ```
 
 ## Flow 2: INT → EXT Message Flow
@@ -62,109 +63,197 @@ sequenceDiagram
 sequenceDiagram
     participant IC as INT Client
     participant IS as INT-SMTS
-    participant IN as INT NATS (Embedded)
+    participant IN as INT NATS Stream
     participant DL as DLP Server
     participant AM as ArtemisMQ
     participant CA as Corporate API Server
     participant ES as EXT-SMTS
-    participant EN as EXT NATS (Embedded)
+    participant EN as EXT NATS Stream
     participant EC as EXT Client
 
     Note over IC,EC: INT → EXT Flow
     IC->>IS: POST /send/{topic_name}
-    IS->>IN: Place in output queue (grouped by topic)
-    IN->>IS: FIFO message delivery
-    IS->>DL: Send to DLP for risk check
+    IS->>IS: LDAP Auth & Authorization
+    IS->>IN: Publish to SMTS_INT stream
+    IN->>IS: Pull consumer processes message
+    IS->>DL: DLP validation check
     alt DLP Approved
         IS->>AM: Push to ArtemisMQ via STOMP
-        AM->>CA: Corporate API consumes (FIFO)
+        AM->>CA: Corporate API consumes
         CA->>ES: POST /corp_message/{topic_name}
-        ES->>EN: Store in input queue (grouped by topic)
+        ES->>EN: Publish to SMTS_EXT stream
         EC->>ES: GET /receive/{topic_name}?count=n
-        ES->>EC: Return messages
-        EC->>ES: POST /confirm/{topic_name} (confirm receipt)
-        ES->>EN: Delete confirmed messages from NATS
+        ES->>EC: Return messages from NATS stream
+        EC->>ES: POST /confirm/{topic_name}
+        ES->>EN: Acknowledge message deletion
     else DLP Rejected
         IS->>IS: Log rejection in incidents.log
+        IS->>IN: Acknowledge message (no retry)
     end
-```
-
-## System Architecture Overview
-
-```mermaid
-flowchart TD
-    subgraph EXT Network
-        EC[EXT Client]
-        ES[EXT-SMTS Server]
-        EN[EXT NATS<br/>Embedded]
-    end
-
-    subgraph INT Network
-        IC[INT Client]
-        IS[INT-SMTS Server]
-        IN[INT NATS<br/>Embedded]
-        DL[DLP Server]
-    end
-
-    subgraph Corporate Infrastructure
-        CA[Corporate API Server]
-        AM[ArtemisMQ]
-    end
-
-    %% Flow 1: EXT → INT
-    EC -->|POST /send/{topic}| ES
-    ES -->|Output Queue| EN
-    EN -->|FIFO| ES
-    ES -->|POST /topic_name| CA
-    CA -->|Push| AM
-    AM -->|Pull| IS
-    IS -->|Input Queue| IN
-    IC -->|GET /receive/{topic}| IS
-    IC -->|POST /confirm/{topic}| IS
-    IS -->|Delete| IN
-
-    %% Flow 2: INT → EXT
-    IC -->|POST /send/{topic}| IS
-    IS -->|Output Queue| IN
-    IN -->|FIFO| IS
-    IS -->|DLP Check| DL
-    DL -->|Approved/Rejected| IS
-    IS -->|STOMP Push| AM
-    AM -->|FIFO| CA
-    CA -->|POST /corp_message/{topic}| ES
-    ES -->|Input Queue| EN
-    EC -->|GET /receive/{topic}| ES
-    EC -->|POST /confirm/{topic}| ES
-    ES -->|Delete| EN
 ```
 
 ## Key Features
 
-- **Durable NATS Queues**: All NATS queues are durable with workqueue retention
+- **Durable NATS Streams**: Dedicated NATS JetStream streams with workqueue retention
+- **LDAP Authentication**: Centralized user authentication and authorization
 - **FIFO Processing**: Messages processed in strict first-in-first-out order
-- **Topic-Based Grouping**: Messages grouped by topic names in both input/output queues
+- **Topic-Based Grouping**: Messages grouped by topic names in dedicated streams
 - **DLP Integration**: Risk-based validation for INT → EXT flow
 - **Confirmation Mechanism**: Clients confirm receipt before message deletion
 - **Bidirectional Flow**: Full support for both EXT→INT and INT→EXT message flows
+
+## LDAP Authentication & Authorization
+
+SMTS integrates with LDAP servers for centralized user management and fine-grained access control.
+
+### Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant SMTS as SMTS Server
+    participant LDAP as LDAP Server
+    participant NATS as NATS Stream
+
+    Note over C,NATS: LDAP Authentication Flow
+    C->>SMTS: HTTP Request with Basic Auth
+    SMTS->>LDAP: Bind & Authenticate User
+    LDAP->>SMTS: Authentication Result + User Info
+    SMTS->>LDAP: Get User Groups
+    LDAP->>SMTS: User Group Membership
+    
+    alt Authentication Successful
+        SMTS->>SMTS: Check Topic Authorization
+        alt Authorized for Topic
+            SMTS->>NATS: Process Message
+            SMTS->>C: 200 OK
+        else Not Authorized
+            SMTS->>C: 403 Forbidden
+        end
+    else Authentication Failed
+        SMTS->>C: 401 Unauthorized
+    end
+```
+
+### Authorization Groups
+
+SMTS uses LDAP group membership for fine-grained authorization:
+
+- **ext_writer**: Write access to EXT topics
+- **ext_reader**: Read access from EXT topics
+- **int_writer**: Write access to INT topics
+- **int_reader**: Read access from INT topics
+- **admin**: Full access to all topics
+
+## Dedicated NATS Streams Architecture
+
+SMTS uses dedicated NATS JetStream streams for each deployment with workqueue retention policy for reliable message processing.
+
+### Stream Architecture
+
+```mermaid
+flowchart TD
+    subgraph EXT_Deployment[EXT SMTS]
+        EXT_API[EXT API Server]
+        EXT_CONSUMER[EXT Consumer<br/>SMTS_EXT_CONSUMER]
+        EXT_PUBLISHER[EXT Publisher]
+    end
+    
+    subgraph INT_Deployment[INT SMTS]
+        INT_API[INT API Server]
+        INT_CONSUMER[INT Consumer<br/>SMTS_INT_CONSUMER]
+        INT_PUBLISHER[INT Publisher]
+    end
+    
+    subgraph EXT_NATS[EXT NATS Stream: SMTS_EXT]
+        EXT_IN[EXT Input Queue<br/>monterra.> pact_update.>]
+        EXT_OUT[EXT Output Queue<br/>monterra.> pact_update.>]
+    end
+    
+    subgraph INT_NATS[INT NATS Stream: SMTS_INT]
+        INT_IN[INT Input Queue<br/>monterra.> pact_update.>]
+        INT_OUT[INT Output Queue<br/>monterra.> pact_update.>]
+    end
+    
+    %% EXT Flow
+    EXT_API -->|Publish| EXT_OUT
+    EXT_CONSUMER -->|Pull Subscribe| EXT_OUT
+    EXT_CONSUMER -->|Process| EXT_API
+    EXT_API -->|Publish| EXT_IN
+    EXT_CONSUMER -->|Pull Subscribe| EXT_IN
+    
+    %% INT Flow
+    INT_API -->|Publish| INT_OUT
+    INT_CONSUMER -->|Pull Subscribe| INT_OUT
+    INT_CONSUMER -->|Process| INT_API
+    INT_API -->|Publish| INT_IN
+    INT_CONSUMER -->|Pull Subscribe| INT_IN
+```
+
+### Stream Configuration
+
+Each deployment maintains separate NATS streams with the following characteristics:
+
+- **Workqueue Retention**: Messages are removed after successful acknowledgment
+- **Durable Consumers**: Consumers survive server restarts
+- **Explicit Acknowledgments**: Manual ack/nack for reliable processing
+- **File Storage**: Persistent message storage
+- **24-hour TTL**: Automatic cleanup of old messages
+
+#### EXT Stream Configuration
+```yaml
+nats:
+  stream:
+    name: "SMTS_EXT"
+    subjects: ["monterra.>", "pact_update.>"]
+    retention: "workqueue"
+    max_age: "24h"
+    storage: "file"
+    replicas: 1
+  consumer:
+    durable_name: "SMTS_EXT_CONSUMER"
+    ack_policy: "explicit"
+    deliver_policy: "all"
+```
+
+#### INT Stream Configuration
+```yaml
+nats:
+  stream:
+    name: "SMTS_INT"
+    subjects: ["monterra.>", "pact_update.>"]
+    retention: "workqueue"
+    max_age: "24h"
+    storage: "file"
+    replicas: 1
+  consumer:
+    durable_name: "SMTS_INT_CONSUMER"
+    ack_policy: "explicit"
+    deliver_policy: "all"
+```
 
 ## Error Handling Flow
 
 ```mermaid
 flowchart TD
-    Start[Process Message] --> Validate{Validate Permissions}
-    Validate -->|Invalid| LogError[Log Permission Error]
-    Validate -->|Valid| Process
+    Start[Process Message] --> LDAPAuth{LDAP Authentication}
+    LDAPAuth -->|Failed| AuthError[Log Auth Error<br/>401 Unauthorized]
+    LDAPAuth -->|Success| TopicAuth{Topic Authorization}
     
-    subgraph Process
-        Direction{Flow Direction}
-        Direction -->|EXT→INT| SendAPI[Send to Corporate API]
-        Direction -->|INT→EXT| DLPCheck[DLP Validation]
-        
-        DLPCheck -->|Approved| SendArtemis[Push to ArtemisMQ]
-        DLPCheck -->|Rejected| LogDLPError[Log to incidents.log]
-        SendArtemis --> SendAPI
-    end
-
+    TopicAuth -->|Denied| AuthzError[Log Authz Error<br/>403 Forbidden]
+    TopicAuth -->|Granted| NATSPublish[Publish to NATS Stream]
+    
+    NATSPublish -->|Success| ConsumerProcess[Consumer Processes Message]
+    NATSPublish -->|Failed| NATSError[Log NATS Error<br/>Retry with Backoff]
+    
+    ConsumerProcess --> ProcessFlow{Flow Direction}
+    ProcessFlow -->|EXT→INT| SendAPI[Send to Corporate API]
+    ProcessFlow -->|INT→EXT| DLPCheck[DLP Validation]
+    
+    DLPCheck -->|Approved| SendArtemis[Push to ArtemisMQ]
+    DLPCheck -->|Rejected| LogDLPError[Log to incidents.log<br/>Acknowledge Message]
+    SendArtemis --> SendAPI
+    
     SendAPI --> APIResult{API Response}
     APIResult -->|Success| Ack[Acknowledge Message]
     APIResult -->|Temporary Error| Retry[Retry with Backoff]
@@ -173,7 +262,8 @@ flowchart TD
     Retry -->|Max Retries| DeadLetter
     Retry -->|Success| Ack
     
-    LogError --> Discard[Discard Message]
+    AuthError --> Discard[Discard Message]
+    AuthzError --> Discard
     LogDLPError --> Discard
     DeadLetter --> Finish[Finish Processing]
     Ack --> Finish

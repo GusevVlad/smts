@@ -155,6 +155,7 @@ func TestAPIClient_ValidateMessage_Success(t *testing.T) {
 		response := types.DLPValidationResponse{
 			Approved:  true,
 			MessageID: "test-message-123",
+			Reasons:   []string{},
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -228,6 +229,7 @@ func TestAPIClient_ValidateMessage_Rejected(t *testing.T) {
 	assert.Error(t, err, "ValidateMessage should return error for DLP rejection")
 	assert.NotNil(t, result, "Response should not be nil")
 	assert.False(t, result.Approved, "Message should be rejected by DLP")
+	assert.Equal(t, "test-message-123", result.MessageID)
 	if len(result.Reasons) > 0 {
 		assert.Contains(t, result.Reasons[0], "sensitive information")
 	}
