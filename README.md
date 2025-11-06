@@ -205,7 +205,7 @@ Each deployment maintains separate NATS streams with the following characteristi
 nats:
   stream:
     name: "SMTS_EXT"
-    subjects: ["monterra.>", "pact_update.>"]
+    subjects: ["monterra.event", "pact_update.event"]
     retention: "workqueue"
     max_age: "24h"
     storage: "file"
@@ -221,7 +221,7 @@ nats:
 nats:
   stream:
     name: "SMTS_INT"
-    subjects: ["monterra.>", "pact_update.>"]
+    subjects: ["monterra.event", "pact_update.event"]
     retention: "workqueue"
     max_age: "24h"
     storage: "file"
@@ -394,7 +394,7 @@ nats:
   port: 4222
   stream:
     name: "SMTS_EXT"
-    subjects: ["monterra.>", "pact_update.>"]
+    subjects: ["monterra.event", "pact_update.event"]
     retention: "workqueue"
     max_age: "24h"
     storage: "file"
@@ -432,16 +432,11 @@ artemis:  # int only
 
 ```yaml
 topics:
-  monterra:
+  monterra.event:
     description: "Monterra events topic"
-    permissions:
-      read: ["ext_reader", "int_reader"]
-      write: ["ext_writer", "int_writer"]
-
-roles:
-  ext_reader:
-    description: "EXT network message reader"
-    topics: ["monterra", "pact_update"]
+  
+  pact_update.event:
+    description: "Pact update events topic"
 ```
 
 ## Message Format
