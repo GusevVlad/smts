@@ -1,0 +1,109 @@
+# LDAP Roles Configuration
+# This file defines the LDAP groups and their permissions for SMTS authorization
+
+# Role definitions with permissions
+roles:
+  # EXT Environment Roles
+  ext_writer:
+    description: "Users who can send messages from EXT environment"
+    permissions:
+      - "ext:send"
+      - "ext:corp_message"
+  
+  ext_reader:
+    description: "Users who can read messages in EXT environment"
+    permissions:
+      - "ext:read"
+
+  # INT Environment Roles
+  int_writer:
+    description: "Users who can send messages from INT environment"
+    permissions:
+      - "int:send"
+      - "int:corp_message"
+  
+  int_reader:
+    description: "Users who can read messages in INT environment"
+    permissions:
+      - "int:read"
+
+  # Application Security Roles
+  appsec_writer:
+    description: "Application security users with write permissions"
+    permissions:
+      - "ext:send"
+      - "int:send"
+      - "appsec:write"
+  
+  appsec_reader:
+    description: "Application security users with read permissions"
+    permissions:
+      - "ext:read"
+      - "int:read"
+      - "appsec:read"
+
+  # DOS (Denial of Service) Roles
+  dos_writer:
+    description: "DOS monitoring users with write permissions"
+    permissions:
+      - "ext:send"
+      - "int:send"
+      - "dos:write"
+  
+  dos_reader:
+    description: "DOS monitoring users with read permissions"
+    permissions:
+      - "ext:read"
+      - "int:read"
+      - "dos:read"
+
+  # Test User Role (for testing purposes)
+  testuser:
+    description: "Test user with full access for testing purposes"
+    permissions:
+      - "ext:send"
+      - "ext:read"
+      - "ext:corp_message"
+      - "int:send"
+      - "int:read"
+      - "int:corp_message"
+      - "appsec:write"
+      - "appsec:read"
+      - "dos:write"
+      - "dos:read"
+      - "admin:*"
+
+  # Administrative Role
+  admin:
+    description: "Full administrative access to all endpoints"
+    permissions:
+      - "ext:send"
+      - "ext:read"
+      - "ext:corp_message"
+      - "int:send"
+      - "int:read"
+      - "int:corp_message"
+      - "appsec:write"
+      - "appsec:read"
+      - "dos:write"
+      - "dos:read"
+      - "admin:*"
+
+# Endpoint to permission mapping
+endpoint_permissions:
+  # EXT deployment endpoints
+  ext:
+    send: "ext:send"
+    read: "ext:read"
+    corp_message: "ext:corp_message"
+  
+  # INT deployment endpoints
+  int:
+    send: "int:send"
+    read: "int:read"
+    corp_message: "int:corp_message"
+
+# Default permissions (if no specific mapping exists)
+default_permissions:
+  - "ext:read"
+  - "int:read"

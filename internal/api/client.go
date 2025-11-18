@@ -39,18 +39,13 @@ func NewClient(apiConfig *types.APIConfig, dlpConfig *types.DLPConfig, logger *z
 
 	// Note: Authentication headers are set per-request to avoid conflicts
 
-	var tokenManager *TokenManager
-	if apiConfig.Auth.Type == "client_credentials" {
-		tokenManager = NewTokenManager(&apiConfig.Auth, logger)
-	}
-
 	return &Client{
 		client:      client,
 		apiConfig:   apiConfig,
 		dlpConfig:   dlpConfig,
 		logger:      logger,
 		baseURL:     apiConfig.BaseURL,
-		tokenManager: tokenManager,
+		tokenManager: nil, // No longer needed for client_credentials header-based auth
 	}
 }
 
@@ -62,12 +57,12 @@ func (c *Client) setAuthHeaders(ctx context.Context, request *resty.Request) err
 			request.SetHeader("X-API-Key", c.apiConfig.Auth.APIKey)
 		}
 	case "client_credentials":
-		if c.tokenManager != nil {
-			token, err := c.tokenManager.GetToken(ctx)
-			if err != nil {
-				return types.WrapSMTSError(err, types.ErrAPIAuth, "Failed to get access token")
-			}
-			request.SetAuthToken(token)
+		// For client_credentials, send client ID and secret as headers
+		if c.apiConfig.Auth.ClientID != "" {
+			request.SetHeader("X-Client-ID", c.apiConfig.Auth.ClientID)
+		}
+		if c.apiConfig.Auth.ClientSecret != "" {
+			request.SetHeader("X-Client-Secret", c.apiConfig.Auth.ClientSecret)
 		}
 	}
 	return nil
@@ -92,13 +87,28 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 		}, err
 	}
 
-	// Build the endpoint URL
-	endpoint := fmt.Sprintf("%s/%s", c.baseURL, msg.Topic)
+	// Build the endpoint URL - use the new /smts/message endpoint
+	endpoint := fmt.Sprintf("%s/smts/message", c.baseURL)
+
+	// Parse the message body to extract the actual data
+	var messageData map[string]interface{}
+	if err := json.Unmarshal(msg.Body, &messageData); err != nil {
+		// If parsing fails, use the raw body as data
+		messageData = map[string]interface{}{
+			"content": string(msg.Body),
+		}
+	}
+
+	// Prepare the request body for /smts/message endpoint
+	requestBody := map[string]interface{}{
+		"topic": msg.Topic,
+		"data":  messageData,
+	}
 
 	// Prepare the request
 	request := c.client.R().
 		SetContext(ctx).
-		SetBody(msg.Body).
+		SetBody(requestBody).
 		SetHeader("Content-Type", "application/json")
 
 	// Set authentication headers
@@ -111,7 +121,7 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 		}, err
 	}
 
-	// Add SMTS headers
+	// Add SMTS headers as required
 	request.SetHeader("X-SMTS-Message-ID", msg.ID)
 	request.SetHeader("X-SMTS-Timestamp", msg.Timestamp.Format(time.RFC3339))
 	request.SetHeader("X-SMTS-Source", msg.Source)

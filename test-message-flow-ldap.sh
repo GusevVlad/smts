@@ -26,7 +26,7 @@ API_KEY="${API_KEY:-test-api-key}"
 TOPIC_MONTERRA="${TOPIC_MONTERRA:-test.monterra.event}"
 TOPIC_PACT_UPDATE="${TOPIC_PACT_UPDATE:-test.pact_update.event}"
 
-# LDAP credentials for testing
+# LDAP credentials for testing - using user WITH proper roles
 LDAP_USERNAME="${LDAP_USERNAME:-testuser}"
 LDAP_PASSWORD="${LDAP_PASSWORD:-testpass}"
 LDAP_AUTH_HEADER="Basic $(printf "%s" "$LDAP_USERNAME:$LDAP_PASSWORD" | base64)"
@@ -50,14 +50,13 @@ generate_message_id() {
     echo "$(date +%Y%m%d%H%M%S)-$(openssl rand -hex 4)"
 }
 
-# Function to send message to EXT SMTS with curl command and LDAP auth
+# Function to send message to EXT SMTS with curl command and LDAP auth using new REST API
 send_to_ext_smts() {
     local message_id=$(generate_message_id)
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     
     local payload=$(cat <<EOF
-{  
-  "env": "INT",
+{
   "app_name": "zp-eco",
   "app_version": "1.0.1",
   "auto_system": "OMNIP",
@@ -83,27 +82,17 @@ send_to_ext_smts() {
 }
 EOF
 )
-    echo "=== Ready-to-use curl command for EXT SMTS (with LDAP) ==="
-    echo "curl -X POST \"$API_BASE_URL_EXT/send/$TOPIC_MONTERRA\" \\"
+    echo "=== Ready-to-use curl command for EXT SMTS (with LDAP) - New REST API ==="
+    echo "curl -X POST \"$API_BASE_URL_EXT/send?topic=$TOPIC_MONTERRA\" \\"
     echo "  -H \"Content-Type: application/json\" \\"
     echo "  -H \"Authorization: $LDAP_AUTH_HEADER\" \\"
-    echo "  -H \"X-API-Key: $API_KEY\" \\"
-    echo "  -H \"X-SMTS-Message-ID: $message_id\" \\"
-    echo "  -H \"X-SMTS-Timestamp: $timestamp\" \\"
-    echo "  -H \"X-SMTS-Source: ext-client\" \\"
-    echo "  -H \"smts-role: ext_writer\" \\"
     echo "  -d '$payload'"
     echo
 
     echo "Executing the request..."
-    RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$API_BASE_URL_EXT/send/$TOPIC_MONTERRA" \
+    RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$API_BASE_URL_EXT/send?topic=$TOPIC_MONTERRA" \
       -H "Content-Type: application/json" \
       -H "Authorization: $LDAP_AUTH_HEADER" \
-      -H "X-API-Key: $API_KEY" \
-      -H "X-SMTS-Message-ID: $message_id" \
-      -H "X-SMTS-Timestamp: $timestamp" \
-      -H "X-SMTS-Source: ext-client" \
-      -H "smts-role: ext_writer" \
       -d "$payload")
 
     # Extract HTTP status code
@@ -115,7 +104,7 @@ EOF
     echo
 
     if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ]; then
-        echo "✅ Message sent successfully to EXT SMTS with LDAP auth!"
+        echo "✅ Message sent successfully to EXT SMTS with LDAP auth using new REST API!"
         return 0
     else
         echo "❌ Failed to send message to EXT SMTS (HTTP $HTTP_CODE)"
@@ -123,14 +112,13 @@ EOF
     fi
 }
 
-# Function to send message to INT SMTS with curl command and LDAP auth
+# Function to send message to INT SMTS with curl command and LDAP auth using new REST API
 send_to_int_smts() {
     local message_id=$(generate_message_id)
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     
     local payload=$(cat <<EOF
 {
-  "env": "EXT",
   "app_version": "1.0.1",
   "auto_system": "OMNIP",
   "metrics": [
@@ -156,27 +144,17 @@ send_to_int_smts() {
 EOF
 )
 
-    echo "=== Ready-to-use curl command for INT SMTS (with LDAP) ==="
-    echo "curl -X POST \"$API_BASE_URL_INT/send/$TOPIC_MONTERRA\" \\"
+    echo "=== Ready-to-use curl command for INT SMTS (with LDAP) - New REST API ==="
+    echo "curl -X POST \"$API_BASE_URL_INT/send?topic=$TOPIC_MONTERRA\" \\"
     echo "  -H \"Content-Type: application/json\" \\"
     echo "  -H \"Authorization: $LDAP_AUTH_HEADER\" \\"
-    echo "  -H \"X-API-Key: $API_KEY\" \\"
-    echo "  -H \"X-SMTS-Message-ID: $message_id\" \\"
-    echo "  -H \"X-SMTS-Timestamp: $timestamp\" \\"
-    echo "  -H \"X-SMTS-Source: int-client\" \\"
-    echo "  -H \"smts-role: int_writer\" \\"
     echo "  -d '$payload'"
     echo
 
     echo "Executing the request..."
-    RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$API_BASE_URL_INT/send/$TOPIC_MONTERRA" \
+    RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$API_BASE_URL_INT/send?topic=$TOPIC_MONTERRA" \
       -H "Content-Type: application/json" \
       -H "Authorization: $LDAP_AUTH_HEADER" \
-      -H "X-API-Key: $API_KEY" \
-      -H "X-SMTS-Message-ID: $message_id" \
-      -H "X-SMTS-Timestamp: $timestamp" \
-      -H "X-SMTS-Source: int-client" \
-      -H "smts-role: int_writer" \
       -d "$payload")
 
     # Extract HTTP status code
@@ -188,7 +166,7 @@ EOF
     echo
 
     if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ]; then
-        echo "✅ Message sent successfully to INT SMTS with LDAP auth!"
+        echo "✅ Message sent successfully to INT SMTS with LDAP auth using new REST API!"
         return 0
     else
         echo "❌ Failed to send message to INT SMTS (HTTP $HTTP_CODE)"
@@ -213,34 +191,28 @@ check_service_health() {
     fi
 }
 
-# Function to check received messages with LDAP auth
+# Function to check received messages with LDAP auth using new REST API
 check_received_messages() {
     local deployment=$1
     local topic=$2
     local description=$3
     
     if [ "$deployment" = "ext" ]; then
-        endpoint="$MESSAGE_API_EXT/messages?topic=$topic&count=1"
-        role="ext_reader"
+        endpoint="$API_BASE_URL_EXT/receive?topic=$topic&count=1"
     else
-        endpoint="$MESSAGE_API_INT/messages?topic=$topic&count=1"
-        role="int_reader"
+        endpoint="$API_BASE_URL_INT/receive?topic=$topic&count=1"
     fi
     
-    echo "=== Ready-to-use curl command for checking $description (with LDAP) ==="
+    echo "=== Ready-to-use curl command for checking $description (with LDAP) - New REST API ==="
     echo "curl -X GET \"$endpoint\" \\"
     echo "  -H \"Content-Type: application/json\" \\"
-    echo "  -H \"Authorization: $LDAP_AUTH_HEADER\" \\"
-    echo "  -H \"X-API-Key: $API_KEY\" \\"
-    echo "  -H \"smts-role: $role\""
+    echo "  -H \"Authorization: $LDAP_AUTH_HEADER\""
     echo
     
     echo "Executing the request..."
     RESPONSE=$(curl -s -X GET "$endpoint" \
       -H "Content-Type: application/json" \
-      -H "Authorization: $LDAP_AUTH_HEADER" \
-      -H "X-API-Key: $API_KEY" \
-      -H "smts-role: $role")
+      -H "Authorization: $LDAP_AUTH_HEADER")
     
     echo "Response:"
     echo "$RESPONSE" | jq . 2>/dev/null || echo "$RESPONSE"
@@ -249,7 +221,7 @@ check_received_messages() {
     # Extract message count from response
     RECEIVED_COUNT=$(echo "$RESPONSE" | jq -r '.received // 0' 2>/dev/null || echo "0")
     if [ "$RECEIVED_COUNT" -gt 0 ]; then
-        echo "✅ Message successfully transported with LDAP auth!"
+        echo "✅ Message successfully transported with LDAP auth using new REST API!"
         return 0
     else
         echo "⚠️  No messages found"
@@ -398,49 +370,43 @@ check_received_messages "ext" "$TOPIC_MONTERRA" "EXT SMTS messages from INT" && 
 
 echo "=== Test Complete ==="
 echo
-echo "=== Summary of Ready-to-use Curl Commands with LDAP ==="
+echo "=== Summary of Ready-to-use Curl Commands with LDAP - New REST API ==="
 echo
-echo "1. Send message to EXT SMTS (with LDAP) - IDENTICAL to above:"
-echo "   curl -X POST \"$API_BASE_URL_EXT/send/$TOPIC_MONTERRA\" \\"
+echo "1. Send message to EXT SMTS (with LDAP) - New REST API:"
+echo "   curl -X POST \"$API_BASE_URL_EXT/send?topic=$TOPIC_MONTERRA\" \\"
 echo "     -H \"Content-Type: application/json\" \\"
 echo "     -H \"Authorization: $LDAP_AUTH_HEADER\" \\"
-echo "     -H \"X-API-Key: $API_KEY\" \\"
-echo "     -H \"X-SMTS-Message-ID: \$(date +%Y%m%d%H%M%S)-\$(openssl rand -hex 4)\" \\"
-echo "     -H \"X-SMTS-Timestamp: \$(date -u +%Y-%m-%dT%H:%M:%SZ)\" \\"
-echo "     -H \"X-SMTS-Source: ext-client\" \\"
-echo "     -H \"smts-role: ext_writer\" \\"
-echo "     -d '{\"env\":\"INT\",\"app_name\":\"zp-eco\",\"app_version\":\"1.0.1\",\"auto_system\":\"OMNIP\",\"metrics\":[{\"metric\":\"coverage\",\"value\":\"80.3\"},{\"metric\":\"uncovered conditions\",\"value\":\"60\"},{\"metric\":\"specification exist\",\"value\":\"true\"},{\"metric\":\"specification correct\",\"value\":\"false\"}],\"report_date\":\"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"report_type\":\"unit coverage\"}'"
+echo "     -d '{\"app_name\":\"zp-eco\",\"app_version\":\"1.0.1\",\"auto_system\":\"OMNIP\",\"metrics\":[{\"metric\":\"coverage\",\"value\":\"80.3\"},{\"metric\":\"uncovered conditions\",\"value\":\"60\"},{\"metric\":\"specification exist\",\"value\":\"true\"},{\"metric\":\"specification correct\",\"value\":\"false\"}],\"report_date\":\"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"report_type\":\"unit coverage\"}'"
 echo
-echo "2. Send message to INT SMTS (with LDAP) - IDENTICAL to above:"
-echo "   curl -X POST \"$API_BASE_URL_INT/send/$TOPIC_MONTERRA\" \\"
+echo "2. Send message to INT SMTS (with LDAP) - New REST API:"
+echo "   curl -X POST \"$API_BASE_URL_INT/send?topic=$TOPIC_MONTERRA\" \\"
 echo "     -H \"Content-Type: application/json\" \\"
 echo "     -H \"Authorization: $LDAP_AUTH_HEADER\" \\"
-echo "     -H \"X-API-Key: $API_KEY\" \\"
-echo "     -H \"X-SMTS-Message-ID: \$(date +%Y%m%d%H%M%S)-\$(openssl rand -hex 4)\" \\"
-echo "     -H \"X-SMTS-Timestamp: \$(date -u +%Y-%m-%dT%H:%M:%SZ)\" \\"
-echo "     -H \"X-SMTS-Source: int-client\" \\"
-echo "     -H \"smts-role: int_writer\" \\"
-echo "     -d '{\"env\":\"EXT\",\"app_version\":\"1.0.1\",\"auto_system\":\"OMNIP\",\"metrics\":[{\"metric\":\"coverage\",\"value\":\"80.3\"},{\"metric\":\"uncovered conditions\",\"value\":\"60\"},{\"metric\":\"specification exist\",\"value\":\"true\"},{\"metric\":\"specification correct\",\"value\":\"false\"}],\"report_date\":\"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"report_type\":\"unit coverage\"}'"
+echo "     -d '{\"app_version\":\"1.0.1\",\"auto_system\":\"OMNIP\",\"metrics\":[{\"metric\":\"coverage\",\"value\":\"80.3\"},{\"metric\":\"uncovered conditions\",\"value\":\"60\"},{\"metric\":\"specification exist\",\"value\":\"true\"},{\"metric\":\"specification correct\",\"value\":\"false\"}],\"report_date\":\"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"report_type\":\"unit coverage\"}'"
 echo
-echo "3. Check messages in EXT SMTS (with LDAP) - IDENTICAL to above:"
-echo "   curl -X GET \"$MESSAGE_API_EXT/messages?topic=$TOPIC_MONTERRA&count=1\" \\"
+echo "3. Check messages in EXT SMTS (with LDAP) - New REST API:"
+echo "   curl -X GET \"$API_BASE_URL_EXT/receive?topic=$TOPIC_MONTERRA&count=1\" \\"
+echo "     -H \"Content-Type: application/json\" \\"
+echo "     -H \"Authorization: $LDAP_AUTH_HEADER\""
+echo
+echo "4. Check messages in INT SMTS (with LDAP) - New REST API:"
+echo "   curl -X GET \"$API_BASE_URL_INT/receive?topic=$TOPIC_MONTERRA&count=1\" \\"
+echo "     -H \"Content-Type: application/json\" \\"
+echo "     -H \"Authorization: $LDAP_AUTH_HEADER\""
+echo
+echo "5. Confirm message processing in INT SMTS (with LDAP) - New REST API:"
+echo "   curl -X POST \"$API_BASE_URL_INT/processed?topic=$TOPIC_MONTERRA\" \\"
 echo "     -H \"Content-Type: application/json\" \\"
 echo "     -H \"Authorization: $LDAP_AUTH_HEADER\" \\"
-echo "     -H \"X-API-Key: $API_KEY\" \\"
-echo "     -H \"smts-role: ext_reader\""
-echo
-echo "4. Check messages in INT SMTS (with LDAP) - IDENTICAL to above:"
-echo "   curl -X GET \"$MESSAGE_API_INT/messages?topic=$TOPIC_MONTERRA&count=1\" \\"
-echo "     -H \"Content-Type: application/json\" \\"
-echo "     -H \"Authorization: $LDAP_AUTH_HEADER\" \\"
-echo "     -H \"X-API-Key: $API_KEY\" \\"
-echo "     -H \"smts-role: int_reader\""
+echo "     -d '{\"processed\": \"MESSAGE_ID_HERE\"}'"
 echo
 echo "=== Important Notes ==="
 echo "- LDAP must be enabled in both ext-config.yaml and int-config.yaml"
 echo "- Set ldap.enabled: true in both configuration files"
 echo "- Configure LDAP server details in the configuration files"
 echo "- This script uses test credentials: $LDAP_USERNAME:$LDAP_PASSWORD"
+echo "- For testing, ensure the test user is assigned to appropriate LDAP groups:"
+echo "  - testuser should be in groups: testuser, admin, or other roles defined in ldap-roles.yaml"
 echo "- For production, use real LDAP credentials and secure configuration"
 echo
 echo "=== Test Summary ==="

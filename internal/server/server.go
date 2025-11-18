@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -20,25 +21,27 @@ import (
 	"smts/internal/nats"
 	"smts/pkg/types"
 	"smts/pkg/utils"
+
+	natsio "github.com/nats-io/nats.go"
 	"go.uber.org/zap"
 )
 
 // Server represents the main SMTS server
 type Server struct {
-	config          *types.Config
-	logger          *zap.Logger
-	natsClient      *nats.Client
-	apiClient       *api.Client
-	artemisClient   *artemis.Client
-	processor       *message.Processor
-	clientConsumer  *nats.Consumer
+	config           *types.Config
+	logger           *zap.Logger
+	natsClient       *nats.Client
+	apiClient        *api.Client
+	artemisClient    *artemis.Client
+	processor        *message.Processor
+	clientConsumer   *nats.Consumer
 	externalConsumer *nats.Consumer
-	healthServer    *HealthServer
+	healthServer     *HealthServer
 	messageAPIServer *MessageAPIServer
-	publisher       *nats.Publisher
-	httpServer      *http.Server
-	ldapMiddleware  *LDAPMiddleware
-	running         bool
+	publisher        *nats.Publisher
+	httpServer       *http.Server
+	ldapMiddleware   *LDAPMiddleware
+	running          bool
 }
 
 // NewServer creates a new SMTS server
@@ -122,18 +125,18 @@ func NewServer(configPath string) (*Server, error) {
 	ldapMiddleware := NewLDAPMiddleware(&cfg.LDAP, logger)
 
 	server := &Server{
-		config:          cfg,
-		logger:          logger,
-		natsClient:      natsClient,
-		apiClient:       apiClient,
-		artemisClient:   artemisClient,
-		processor:       processor,
-		clientConsumer:  clientConsumer,
+		config:           cfg,
+		logger:           logger,
+		natsClient:       natsClient,
+		apiClient:        apiClient,
+		artemisClient:    artemisClient,
+		processor:        processor,
+		clientConsumer:   clientConsumer,
 		externalConsumer: externalConsumer,
-		publisher:       publisher,
-		healthServer:    healthServer,
+		publisher:        publisher,
+		healthServer:     healthServer,
 		messageAPIServer: messageAPIServer,
-		ldapMiddleware:  ldapMiddleware,
+		ldapMiddleware:   ldapMiddleware,
 	}
 
 	return server, nil
@@ -325,33 +328,38 @@ func (s *Server) GetLogger() *zap.Logger {
 // startHTTPServer starts the HTTP server for message publishing
 func (s *Server) startHTTPServer() error {
 	mux := http.NewServeMux()
-	
+
 	// Apply LDAP authentication to message sending endpoints
 	mux.HandleFunc("/send/", s.ldapMiddleware.Authenticate(s.messageHandler))
-	
+
 	// Apply LDAP authentication to corporate message endpoints
 	mux.HandleFunc("/corp_message/", s.ldapMiddleware.Authenticate(s.corporateMessageHandler))
-	
+
+	// Apply LDAP authentication to new REST API endpoints according to OpenAPI spec
+	mux.HandleFunc("/send", s.ldapMiddleware.Authenticate(s.sendHandler))
+	mux.HandleFunc("/receive", s.ldapMiddleware.Authenticate(s.receiveHandler))
+	mux.HandleFunc("/processed", s.ldapMiddleware.Authenticate(s.processedHandler))
+
 	// Use a different port for HTTP server (health port + 1)
 	port := s.config.Health.Port + 1
-	
+
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,
 	}
-	
+
 	go func() {
 		s.logger.Info("Starting HTTP server for message publishing",
 			zap.Int("port", port))
-		
+
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			s.logger.Error("HTTP server failed", zap.Error(err))
 		}
 	}()
-	
+
 	// Wait a moment for server to start
 	time.Sleep(100 * time.Millisecond)
-	
+
 	return nil
 }
 
@@ -377,7 +385,7 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "Invalid endpoint"}`, http.StatusNotFound)
 		return
 	}
-	
+
 	topic := strings.TrimPrefix(r.URL.Path, "/send/")
 	if topic == "" {
 		s.logger.Warn("Missing topic in URL path",
@@ -554,7 +562,7 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error": "Invalid endpoint"}`, http.StatusNotFound)
 		return
 	}
-	
+
 	topic := strings.TrimPrefix(r.URL.Path, "/corp_message/")
 	if topic == "" {
 		s.logger.Warn("Missing topic in URL path for corporate message",
@@ -665,13 +673,13 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 	externalMsg := &types.Message{
 		ID:           messageID,
 		Timestamp:    msgTimestamp,
-		Topic:        "external." + topic,  // Use external subject pattern
+		Topic:        "external." + topic, // Use external subject pattern
 		Source:       source,
 		ClientSender: clientSender,
 		Headers:      headers,
-		Body:         body,  // Store only the actual content, not the full message structure
+		Body:         body, // Store only the actual content, not the full message structure
 	}
-	
+
 	s.logger.Info("Publishing corporate message to external NATS stream",
 		zap.String("topic", topic),
 		zap.String("message_id", messageID),
@@ -680,7 +688,7 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 		zap.String("external_topic", externalMsg.Topic),
 		zap.String("stream", s.config.NATS.ExternalStream.Name),
 		zap.Time("message_timestamp", msgTimestamp))
-	
+
 	// Publish message directly to external stream
 	if err := s.publisher.PublishMessageToStream(externalMsg, s.config.NATS.ExternalStream.Name); err != nil {
 		s.logger.Error("Failed to publish corporate message to external stream",
@@ -715,6 +723,419 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+// sendHandler handles the /send endpoint according to OpenAPI specification
+func (s *Server) sendHandler(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("Received send request",
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.String("deployment", s.config.Deployment.Type))
+
+	if r.Method != http.MethodPost {
+		s.logger.Warn("Invalid HTTP method for send endpoint",
+			zap.String("method", r.Method))
+		JSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check LDAP authorization for sending messages
+	if s.ldapMiddleware != nil && !s.ldapMiddleware.AuthorizeEndpoint(r, s.config.Deployment.Type, "send") {
+		s.logger.Warn("LDAP authorization denied for send endpoint",
+			zap.String("deployment", s.config.Deployment.Type))
+		JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
+		return
+	}
+
+	// Get topic from query parameter
+	topic := r.URL.Query().Get("topic")
+	if topic == "" {
+		s.logger.Warn("Missing topic parameter in send request")
+		JSONError(w, "topic parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Read message body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		s.logger.Error("Failed to read request body for send endpoint",
+			zap.String("topic", topic),
+			zap.Error(err))
+		JSONError(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	// Generate message ID
+	messageID := nats.GenerateID()
+	timestamp := time.Now().UTC()
+
+	// Get client_sender from LDAP context
+	clientSender := ""
+	if userInfo, _ := userInfoFromContext(r.Context()); userInfo != nil {
+		clientSender = userInfo["uid"]
+	}
+
+	// Create message headers
+	headers := make(map[string]string)
+	headers["X-SMTS-Message-ID"] = messageID
+	headers["X-SMTS-Timestamp"] = timestamp.Format(time.RFC3339)
+	headers["X-SMTS-Source"] = "rest-api"
+
+	// Create message
+	msg := &types.Message{
+		ID:           messageID,
+		Timestamp:    timestamp,
+		Topic:        topic,
+		Source:       "rest-api",
+		ClientSender: clientSender,
+		Headers:      headers,
+		Body:         body,
+	}
+
+	// Publish message to NATS
+	if err := s.publisher.PublishMessage(msg); err != nil {
+		s.logger.Error("Failed to publish message via send endpoint",
+			zap.String("topic", topic),
+			zap.String("message_id", messageID),
+			zap.Error(err))
+		JSONError(w, "Failed to publish message to stream", http.StatusInternalServerError)
+		return
+	}
+
+	s.logger.Info("Message sent successfully via send endpoint",
+		zap.String("topic", topic),
+		zap.String("message_id", messageID),
+		zap.String("client_sender", clientSender))
+
+	// Return success response according to OpenAPI spec
+	response := map[string]interface{}{
+		"result":           "ok",
+		"X-SMTS-MessageId": messageID,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-SMTS-Message-ID", messageID)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+// receiveHandler handles the /receive endpoint according to OpenAPI specification
+func (s *Server) receiveHandler(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("Received receive request",
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.String("deployment", s.config.Deployment.Type))
+
+	if r.Method != http.MethodGet {
+		s.logger.Warn("Invalid HTTP method for receive endpoint",
+			zap.String("method", r.Method))
+		JSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check LDAP authorization for reading messages
+	if s.ldapMiddleware != nil && !s.ldapMiddleware.AuthorizeEndpoint(r, s.config.Deployment.Type, "read") {
+		s.logger.Warn("LDAP authorization denied for receive endpoint",
+			zap.String("deployment", s.config.Deployment.Type))
+		JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
+		return
+	}
+
+	// Get topic from query parameter
+	topic := r.URL.Query().Get("topic")
+	if topic == "" {
+		s.logger.Warn("Missing topic parameter in receive request")
+		JSONError(w, "topic parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get count from query parameter (default to 1)
+	countStr := r.URL.Query().Get("count")
+	count := 1
+	if countStr != "" {
+		if parsedCount, err := strconv.Atoi(countStr); err == nil && parsedCount > 0 {
+			count = parsedCount
+			if count > 100 {
+				count = 100
+			}
+		}
+	}
+
+	// Get client_receiver from LDAP context
+	clientReceiver := ""
+	if userInfo, _ := userInfoFromContext(r.Context()); userInfo != nil {
+		clientReceiver = userInfo["uid"]
+	}
+
+	s.logger.Info("Processing receive request",
+		zap.String("topic", topic),
+		zap.Int("count", count),
+		zap.String("client_receiver", clientReceiver))
+
+	// Check if NATS client is available
+	if s.natsClient == nil {
+		s.logger.Error("NATS client not available for receive endpoint")
+		JSONError(w, "Service not properly initialized", http.StatusInternalServerError)
+		return
+	}
+
+	js := s.natsClient.GetJetStream()
+	if js == nil {
+		s.logger.Error("JetStream context not available")
+		JSONError(w, "JetStream not available", http.StatusInternalServerError)
+		return
+	}
+
+	// Read messages from NATS stream
+	messages := make([]map[string]interface{}, 0)
+	received := 0
+
+	// Use the external consumer for reading messages
+	consumerName := s.config.NATS.ExternalConsumer.DurableName
+	streamName := s.config.NATS.ExternalStream.Name
+	externalTopic := "external." + topic
+
+	// Check if the consumer exists
+	_, err := js.ConsumerInfo(streamName, consumerName)
+	if err != nil {
+		s.logger.Error("Failed to get consumer info for receive endpoint",
+			zap.String("stream", streamName),
+			zap.String("consumer", consumerName),
+			zap.String("topic", topic),
+			zap.Error(err))
+		JSONError(w, "Failed to access message stream consumer", http.StatusInternalServerError)
+		return
+	}
+
+	// Subscribe to messages
+	sub, err := js.PullSubscribe(externalTopic, consumerName, natsio.Bind(streamName, consumerName))
+	if err != nil {
+		s.logger.Error("Failed to subscribe to messages for receive endpoint",
+			zap.String("topic", topic),
+			zap.String("external_topic", externalTopic),
+			zap.String("consumer", consumerName),
+			zap.Error(err))
+		JSONError(w, "Failed to subscribe to messages", http.StatusInternalServerError)
+		return
+	}
+	defer sub.Unsubscribe()
+
+	// Fetch messages
+	fetchedMsgs, err := sub.Fetch(count, natsio.MaxWait(5*time.Second))
+	if err != nil && err != natsio.ErrTimeout {
+		s.logger.Error("Failed to fetch messages for receive endpoint",
+			zap.String("topic", topic),
+			zap.Int("requested_count", count),
+			zap.Error(err))
+		JSONError(w, "Failed to fetch messages", http.StatusInternalServerError)
+		return
+	}
+
+	// Process fetched messages
+	for _, msg := range fetchedMsgs {
+		received++
+
+		// Extract actual content from the message structure
+		var msgData map[string]interface{}
+		var actualBody interface{}
+		var smtsHeaders map[string]interface{}
+		
+		if err := json.Unmarshal(msg.Data, &msgData); err == nil {
+			// Debug: log the message structure to understand what we're dealing with
+			s.logger.Debug("Processing message structure for receive endpoint",
+				zap.Any("msg_data", msgData),
+				zap.String("topic", topic))
+			
+			// Check if this is a nested message structure (from ArtemisMQ)
+			if bodyField, exists := msgData["body"]; exists {
+				// Check if the body field itself contains nested structure
+				if nestedBody, ok := bodyField.(map[string]interface{}); ok {
+					// This is a complex nested structure - check for inner body
+					if innerBody, exists := nestedBody["body"]; exists {
+						// Extract the actual content from the nested structure
+						actualBody = innerBody
+						// Extract headers from the nested structure if available
+						if nestedHeaders, exists := nestedBody["headers"]; exists {
+							if headersMap, ok := nestedHeaders.(map[string]interface{}); ok {
+								smtsHeaders = headersMap
+							}
+						}
+					} else {
+						// Use the nested body as the actual content
+						actualBody = bodyField
+						// Extract headers from the nested structure if available
+						if nestedHeaders, exists := nestedBody["headers"]; exists {
+							if headersMap, ok := nestedHeaders.(map[string]interface{}); ok {
+								smtsHeaders = headersMap
+							}
+						}
+					}
+				} else {
+					// This is a simple nested message structure - extract the actual content
+					actualBody = bodyField
+				}
+			} else if nestedBody, exists := msgData["Body"]; exists {
+				// Check for capitalized Body field (from ArtemisMQ)
+				actualBody = nestedBody
+			} else {
+				// This is a direct message - use the raw data as body
+				actualBody = string(msg.Data)
+			}
+			
+			// If we haven't found headers in the nested structure, check the outer message
+			if smtsHeaders == nil {
+				if headersField, exists := msgData["headers"]; exists {
+					if headersMap, ok := headersField.(map[string]interface{}); ok {
+						smtsHeaders = headersMap
+					}
+				}
+			}
+		} else {
+			// If parsing fails, use the raw data
+			actualBody = string(msg.Data)
+		}
+
+		// Create clean headers structure
+		cleanHeaders := map[string]interface{}{
+			"Content-Type": "application/json",
+		}
+		
+		// Extract SMTS headers from the message data
+		if smtsHeaders != nil {
+			if messageID, exists := smtsHeaders["X-SMTS-Message-ID"]; exists {
+				cleanHeaders["X-SMTS-Message-ID"] = messageID
+			}
+			if timestamp, exists := smtsHeaders["X-SMTS-Timestamp"]; exists {
+				cleanHeaders["X-SMTS-Timestamp"] = timestamp
+			}
+			// Also check for lowercase variants
+			if messageID, exists := smtsHeaders["x-smts-message-id"]; exists {
+				cleanHeaders["X-SMTS-Message-ID"] = messageID
+			}
+			if timestamp, exists := smtsHeaders["x-smts-timestamp"]; exists {
+				cleanHeaders["X-SMTS-Timestamp"] = timestamp
+			}
+		}
+		
+		// Fallback to NATS headers if SMTS headers are not found
+		if cleanHeaders["X-SMTS-Message-ID"] == nil || cleanHeaders["X-SMTS-Message-ID"] == "" {
+			if msg.Header != nil {
+				if values := msg.Header.Values("X-SMTS-Message-ID"); len(values) > 0 {
+					cleanHeaders["X-SMTS-Message-ID"] = values[0]
+				}
+			}
+		}
+		if cleanHeaders["X-SMTS-Timestamp"] == nil || cleanHeaders["X-SMTS-Timestamp"] == "" {
+			if msg.Header != nil {
+				if values := msg.Header.Values("X-SMTS-Timestamp"); len(values) > 0 {
+					cleanHeaders["X-SMTS-Timestamp"] = values[0]
+				}
+			}
+		}
+
+		messageData := map[string]interface{}{
+			"body":    actualBody,
+			"headers": cleanHeaders,
+			"topic":   topic,
+		}
+
+		messages = append(messages, messageData)
+
+		// Acknowledge the message
+		if err := msg.Ack(); err != nil {
+			s.logger.Warn("Failed to acknowledge message in receive endpoint",
+				zap.String("message_id", fmt.Sprintf("%v", cleanHeaders["X-SMTS-Message-ID"])),
+				zap.String("topic", topic),
+				zap.Error(err))
+		}
+	}
+
+	s.logger.Info("Receive request completed successfully",
+		zap.String("topic", topic),
+		zap.Int("requested", count),
+		zap.Int("received", received),
+		zap.String("client_receiver", clientReceiver))
+
+	// Return response according to OpenAPI spec
+	response := map[string]interface{}{
+		"api":       "receive-api",
+		"count":     count,
+		"messages":  messages,
+		"received":  received,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"topic":     topic,
+	}
+
+	JSONSuccess(w, response, http.StatusOK)
+}
+
+// processedHandler handles the /processed endpoint according to OpenAPI specification
+func (s *Server) processedHandler(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("Received processed request",
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.String("deployment", s.config.Deployment.Type))
+
+	if r.Method != http.MethodPost {
+		s.logger.Warn("Invalid HTTP method for processed endpoint",
+			zap.String("method", r.Method))
+		JSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check LDAP authorization for processed endpoint
+	if s.ldapMiddleware != nil && !s.ldapMiddleware.AuthorizeEndpoint(r, s.config.Deployment.Type, "send") {
+		s.logger.Warn("LDAP authorization denied for processed endpoint",
+			zap.String("deployment", s.config.Deployment.Type))
+		JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
+		return
+	}
+
+	// Get topic from query parameter
+	topic := r.URL.Query().Get("topic")
+	if topic == "" {
+		s.logger.Warn("Missing topic parameter in processed request")
+		JSONError(w, "topic parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Parse request body
+	var request struct {
+		Processed string `json:"processed"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		s.logger.Error("Failed to parse processed request body",
+			zap.String("topic", topic),
+			zap.Error(err))
+		JSONError(w, "Invalid JSON in request body", http.StatusBadRequest)
+		return
+	}
+
+	if request.Processed == "" {
+		s.logger.Warn("Missing processed field in request body")
+		JSONError(w, "processed field is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get client_sender from LDAP context
+	clientSender := ""
+	if userInfo, _ := userInfoFromContext(r.Context()); userInfo != nil {
+		clientSender = userInfo["uid"]
+	}
+
+	s.logger.Info("Message processing confirmed",
+		zap.String("topic", topic),
+		zap.String("message_id", request.Processed),
+		zap.String("client_sender", clientSender))
+
+	// Return success response according to OpenAPI spec
+	response := map[string]interface{}{
+		"result": "ok",
+	}
+
+	JSONSuccess(w, response, http.StatusOK)
 }
 
 // Run starts the server and waits for shutdown

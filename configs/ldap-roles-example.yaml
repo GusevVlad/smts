@@ -1,0 +1,39 @@
+# LDAP Roles Configuration Example
+# This file shows the LDAP groups that should be configured for proper authorization
+
+# Required LDAP Groups for SMTS Authorization:
+
+# EXT Environment Groups:
+# - ext_writer: Users who can send messages from EXT environment
+# - ext_reader: Users who can read messages in EXT environment
+
+# INT Environment Groups:
+# - int_writer: Users who can send messages from INT environment  
+# - int_reader: Users who can read messages in INT environment
+
+# Application Security Groups:
+# - appsec_writer: Application security users with write permissions
+# - appsec_reader: Application security users with read permissions
+
+# DOS (Denial of Service) Groups:
+# - dos_writer: DOS monitoring users with write permissions
+# - dos_reader: DOS monitoring users with read permissions
+
+# Administrative Group:
+# - admin: Full administrative access to all endpoints
+
+# Example LDAP group structure:
+# 
+# Groups should be created in your LDAP directory with these exact names.
+# Users should be added to the appropriate groups based on their roles.
+#
+# For testing, you can create these groups in your LDAP server:
+# - ext_writer
+# - ext_reader  
+# - int_writer
+# - int_reader
+# - appsec_writer
+# - appsec_reader
+# - dos_writer
+# - dos_reader
+# - admin

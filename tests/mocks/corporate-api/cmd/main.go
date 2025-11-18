@@ -14,13 +14,13 @@ import (
 )
 
 type CorporateAPI struct {
-	stompConn *stomp.Conn
-	extSMTSURL string
-	artemisURL string
-	queueName  string
+	stompConn      *stomp.Conn
+	extSMTSURL     string
+	artemisURL     string
+	queueName      string
 	flow2QueueName string
-	ldapUsername string
-	ldapPassword string
+	ldapUsername   string
+	ldapPassword   string
 }
 
 type Message struct {
@@ -58,18 +58,23 @@ func (api *CorporateAPI) HandleRoot(w http.ResponseWriter, r *http.Request) {
 		api.HealthCheck(w, r)
 		return
 	}
-	
+
 	if r.URL.Path == "/oauth/token" {
 		api.HandleToken(w, r)
 		return
 	}
-	
+
+	if r.URL.Path == "/smts/message" {
+		api.HandleSMTSMessage(w, r)
+		return
+	}
+
 	// Handle topic-specific endpoints for Flow 1
 	if r.Method == http.MethodPost && r.URL.Path != "/" {
 		api.HandleMessageFromEXT(w, r)
 		return
 	}
-	
+
 	// Default response for other requests
 	http.Error(w, "Not found", http.StatusNotFound)
 }
@@ -145,6 +150,100 @@ func (api *CorporateAPI) HandleMessageFromEXT(w http.ResponseWriter, r *http.Req
 	})
 }
 
+// HandleSMTSMessage handles messages from external SMTS via /smts/message endpoint
+func (api *CorporateAPI) HandleSMTSMessage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Authenticate request
+	if !api.authenticateRequest(r) {
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Parse request body
+	var request struct {
+		Topic string                 `json:"topic"`
+		Data  map[string]interface{} `json:"data"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Invalid JSON: %v"}`, err), http.StatusBadRequest)
+		return
+	}
+
+	if request.Topic == "" {
+		http.Error(w, `{"error": "Topic is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	if request.Data == nil {
+		http.Error(w, `{"error": "Data is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Convert data to JSON for the message body
+	bodyBytes, err := json.Marshal(request.Data)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to marshal data: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	// Generate message ID and timestamp
+	messageID := fmt.Sprintf("smts-%s", time.Now().UTC().Format("20060102150405"))
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+
+	// Create message for ArtemisMQ
+	message := Message{
+		ID:        messageID,
+		Timestamp: timestamp,
+		Topic:     request.Topic,
+		Source:    "artemis", // Use "artemis" for Flow 1 messages
+		Headers: map[string]string{
+			"X-SMTS-Message-ID": messageID,
+			"X-SMTS-Timestamp":  timestamp,
+			"X-SMTS-Source":     "artemis", // Use "artemis" for Flow 1 messages
+			"Content-Type":      "application/json",
+		},
+		Body: bodyBytes,
+	}
+
+	// Marshal message to JSON
+	messageBytes, err := json.Marshal(message)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to marshal message: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	// Send to ArtemisMQ with proper SMTS headers
+	err = api.stompConn.Send(
+		api.queueName,
+		"application/json",
+		messageBytes,
+		stomp.SendOpt.Header("smts-message-id", messageID),
+		stomp.SendOpt.Header("smts-timestamp", timestamp),
+		stomp.SendOpt.Header("smts-source", "artemis"), // Use "artemis" for Flow 1 messages
+		stomp.SendOpt.Header("smts-topic", request.Topic),
+		stomp.SendOpt.Header("persistent", "true"),
+	)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to send to ArtemisMQ: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Message received via /smts/message and forwarded to ArtemisMQ: %s (topic: %s)", messageID, request.Topic)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "accepted",
+		"message": "Message forwarded to ArtemisMQ",
+		"id":      messageID,
+		"topic":   request.Topic,
+	})
+}
 
 // HealthCheck handles health check endpoint
 func (api *CorporateAPI) HealthCheck(w http.ResponseWriter, r *http.Request) {
@@ -223,6 +322,19 @@ func (api *CorporateAPI) authenticateRequest(r *http.Request) bool {
 		}
 	}
 
+	// For /smts/message endpoint, also check for client credentials authentication
+	// This is needed because EXT-SMTS uses client_credentials auth type
+	if r.URL.Path == "/smts/message" {
+		// Check if we have client credentials headers
+		clientID := r.Header.Get("X-Client-ID")
+		clientSecret := r.Header.Get("X-Client-Secret")
+
+		if clientID == "test-client-id" && clientSecret == "test-client-secret" {
+			return true
+		}
+
+	}
+
 	return false
 }
 
@@ -270,15 +382,15 @@ func (api *CorporateAPI) processArtemisMessage(msg *stomp.Message) error {
 
 	// Forward to EXT-SMTS
 	extSMTSURL := fmt.Sprintf("%s/corp_message/%s", api.extSMTSURL, message.Topic)
-	
+
 	client := &http.Client{Timeout: 10 * time.Second}
-	
+
 	// Create request body
 	messageBytes, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
-	
+
 	req, err := http.NewRequest("POST", extSMTSURL, bytes.NewReader(messageBytes))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -290,7 +402,7 @@ func (api *CorporateAPI) processArtemisMessage(msg *stomp.Message) error {
 	req.Header.Set("X-SMTS-Message-ID", message.ID)
 	req.Header.Set("X-SMTS-Timestamp", message.Timestamp)
 	req.Header.Set("X-SMTS-Source", "corporate-api") // Mark as from corporate API for Flow 2
-	
+
 	// Add LDAP Basic Auth header
 	auth := api.ldapUsername + ":" + api.ldapPassword
 	basicAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
@@ -302,7 +414,7 @@ func (api *CorporateAPI) processArtemisMessage(msg *stomp.Message) error {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("Warning: EXT-SMTS returned status %d for message %s", resp.StatusCode, message.ID)
 	} else {

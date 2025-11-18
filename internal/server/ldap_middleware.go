@@ -3,10 +3,12 @@ package server
 import (
 	"encoding/base64"
 	"net/http"
+	"os"
 	"strings"
 
 	"smts/internal/ldap"
 	"smts/pkg/types"
+	"gopkg.in/yaml.v3"
 	"go.uber.org/zap"
 )
 
@@ -18,11 +20,25 @@ type LDAPClient interface {
 	Close()
 }
 
+// RoleConfig defines a role with permissions
+type RoleConfig struct {
+	Description string   `yaml:"description"`
+	Permissions []string `yaml:"permissions"`
+}
+
+// LDAPRolesConfig defines the YAML configuration structure
+type LDAPRolesConfig struct {
+	Roles               map[string]RoleConfig `yaml:"roles"`
+	EndpointPermissions map[string]map[string]string `yaml:"endpoint_permissions"`
+	DefaultPermissions  []string              `yaml:"default_permissions"`
+}
+
 // LDAPMiddleware handles LDAP authentication for the message API
 type LDAPMiddleware struct {
 	ldapClient LDAPClient
 	logger     *zap.Logger
 	enabled    bool
+	rolesConfig *LDAPRolesConfig
 }
 
 // NewLDAPMiddleware creates a new LDAP middleware instance
@@ -75,10 +91,35 @@ func NewLDAPMiddleware(ldapConfig *types.LDAPConfig, logger *zap.Logger) *LDAPMi
 		}
 	}
 
+	// Load LDAP roles configuration
+	rolesConfig, err := loadLDAPRolesConfig("configs/ldap-roles.yaml")
+	if err != nil {
+		logger.Warn("Failed to load LDAP roles configuration, using default permissions",
+			zap.Error(err))
+		// Create default config if file doesn't exist
+		rolesConfig = &LDAPRolesConfig{
+			Roles: make(map[string]RoleConfig),
+			EndpointPermissions: map[string]map[string]string{
+				"ext": {
+					"send":        "ext:send",
+					"read":        "ext:read",
+					"corp_message": "ext:corp_message",
+				},
+				"int": {
+					"send":        "int:send",
+					"read":        "int:read",
+					"corp_message": "int:corp_message",
+				},
+			},
+			DefaultPermissions: []string{"ext:read", "int:read"},
+		}
+	}
+
 	return &LDAPMiddleware{
 		ldapClient: ldapClient,
 		logger:     logger,
 		enabled:    true,
+		rolesConfig: rolesConfig,
 	}
 }
 
@@ -251,29 +292,68 @@ func (lm *LDAPMiddleware) AuthorizeEndpoint(r *http.Request, deploymentType stri
 
 // getRequiredGroups returns the required LDAP groups for a given deployment and endpoint
 func (lm *LDAPMiddleware) getRequiredGroups(deploymentType string, endpointType string) []string {
+	// If we have YAML configuration, use it
+	if lm.rolesConfig != nil {
+		// Get the required permission from endpoint mapping
+		if deploymentMap, exists := lm.rolesConfig.EndpointPermissions[deploymentType]; exists {
+			if requiredPermission, exists := deploymentMap[endpointType]; exists {
+				// Find roles that have this permission
+				var requiredGroups []string
+				for groupName, roleConfig := range lm.rolesConfig.Roles {
+					for _, permission := range roleConfig.Permissions {
+						if permission == requiredPermission {
+							requiredGroups = append(requiredGroups, groupName)
+							break
+						}
+					}
+				}
+				if len(requiredGroups) > 0 {
+					return requiredGroups
+				}
+			}
+		}
+	}
+
+	// Fallback to hardcoded groups if YAML config is not available or doesn't have mapping
 	switch deploymentType {
 	case "ext":
 		switch endpointType {
 		case "send":
-			return []string{"ext_writer", "admin"}
+			return []string{"ext_writer", "appsec_writer", "dos_writer", "admin"}
 		case "read":
-			return []string{"ext_reader", "admin"}
+			return []string{"ext_reader", "appsec_reader", "dos_reader", "admin"}
 		case "corp_message":
-			return []string{"ext_writer", "admin"}
+			return []string{"ext_writer", "appsec_writer", "dos_writer", "admin"}
 		}
 	case "int":
 		switch endpointType {
 		case "send":
-			return []string{"int_writer", "admin"}
+			return []string{"int_writer", "appsec_writer", "dos_writer", "admin"}
 		case "read":
-			return []string{"int_reader", "admin"}
+			return []string{"int_reader", "appsec_reader", "dos_reader", "admin"}
 		case "corp_message":
-			return []string{"int_writer", "admin"}
+			return []string{"int_writer", "appsec_writer", "dos_writer", "admin"}
 		}
 	}
 
 	// Default: require at least one group for any access
-	return []string{"ext_writer", "ext_reader", "int_writer", "int_reader", "admin"}
+	return []string{"ext_writer", "ext_reader", "int_writer", "int_reader", "appsec_writer", "appsec_reader", "dos_writer", "dos_reader", "admin"}
+}
+
+// loadLDAPRolesConfig loads the LDAP roles configuration from YAML file
+func loadLDAPRolesConfig(configPath string) (*LDAPRolesConfig, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var config LDAPRolesConfig
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &config, nil
 }
 
 // Close closes the LDAP connection
