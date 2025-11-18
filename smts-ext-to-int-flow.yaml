@@ -1,0 +1,261 @@
+openapi: 3.0.3
+info:
+  title: SMTS EXT to INT Message Flow API
+  description: |
+    Secure Message Transport System (SMTS) - EXT to INT Message Flow
+    
+    This API specification covers the complete message flow from EXT to INT environment:
+    - Send messages from EXT SMTS
+    - Receive messages in INT SMTS
+    - Confirm message processing in INT SMTS
+    
+    All endpoints use LDAP Basic Authentication.
+  version: 1.0.0
+
+servers:
+  - url: http://smts_ext
+    description: EXT SMTS API Server
+  - url: http://smts_int
+    description: INT SMTS API Server
+
+paths:
+  /send:
+    post:
+      summary: Send message to EXT SMTS
+      description: |
+        Send a message from EXT environment to INT environment via EXT SMTS with LDAP authentication.
+        **Authentication:**
+        - `Authorization`: Basic LDAP authentication only
+        - User roles are checked via internal YAML configuration based on login
+        **Response:**
+        - Returns `X-SMTS-Message-ID` header with assigned message ID
+      parameters:
+        - name: topic
+          in: query
+          required: true
+          description: Topic name for message routing
+          schema:
+            type: string
+            example: signature
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageData'
+      responses:
+        '200':
+          description: Message processed successfully
+          headers:
+            X-SMTS-Message-ID:
+              $ref: '#/components/headers/X-SMTS-Message-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Unauthorized - LDAP authentication failed
+        '403':
+          description: Forbidden - insufficient permissions (user role check failed)
+      security:
+        - basicAuth: []
+
+  /receive:
+    get:
+      summary: Получить в INT (Receive messages in INT SMTS)
+      description: |
+        Retrieve messages from INT SMTS message store with LDAP authentication.
+        **Authentication:**
+        - `Authorization`: Basic LDAP authentication only
+      parameters:
+        - name: topic
+          in: query
+          required: true
+          description: Topic name to filter messages
+          schema:
+            type: string
+            example: signature
+        - name: count
+          in: query
+          required: false
+          description: Number of messages to retrieve
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 1
+            example: 1
+      responses:
+        '200':
+          description: Messages retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiveResponse'
+        '401':
+          description: Unauthorized - LDAP authentication failed
+        '403':
+          description: Forbidden - insufficient permissions
+      security:
+        - basicAuth: []
+
+  /processed:
+    post:
+      summary: Подтвердить получение в INT (Confirm message processing in INT SMTS)
+      description: |
+        Confirm that a message has been processed in INT SMTS with LDAP authentication.
+        **Authentication:**
+        - `Authorization`: Basic LDAP authentication only
+      parameters:
+        - name: topic
+          in: query
+          required: true
+          description: Topic name for the processed message
+          schema:
+            type: string
+            example: signature
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessedRequest'
+      responses:
+        '200':
+          description: Message processing confirmed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Unauthorized - LDAP authentication failed
+        '403':
+          description: Forbidden - insufficient permissions
+      security:
+        - basicAuth: []
+
+components:
+  schemas:
+    MessageData:
+      type: object
+      description: Generic JSON object - can contain any fields and structure
+      additionalProperties: true
+
+    SuccessResponse:
+      type: object
+      required:
+        - result
+      properties:
+        result:
+          type: string
+          description: Operation result status
+          enum: [ok, fail]
+          example: "ok"
+        X-SMTS-MessageId:
+          type: string
+          description: |
+            Assigned message ID (also returned in X-SMTS-Message-ID header)
+            
+            **Only present when result is "ok"**
+            - Not included when result is "fail"
+            - Used for message tracking in subsequent Corporate API requests
+          example: "20240115103000-abc123def456"
+
+    ReceiveResponse:
+      type: object
+      properties:
+        api:
+          type: string
+          example: "receive-api"
+        count:
+          type: integer
+          description: Number of messages requested
+          example: 1
+        messages:
+          type: array
+          description: List of received messages
+          items:
+            type: object
+            properties:
+              body:
+                type: object
+                properties:
+                  topic:
+                    type: string
+                    example: "signature"
+                  data:
+                    type: object
+                    additionalProperties: true
+              headers:
+                type: object
+                properties:
+                  Content-Type:
+                    type: string
+                    example: "application/json"
+                  X-SMTS-Message-ID:
+                    type: string
+                    example: "20251118121743-9a587e3a"
+                  X-SMTS-Timestamp:
+                    type: string
+                    format: date-time
+                    example: "2025-11-18T09:17:43Z"
+        received:
+          type: integer
+          description: Number of messages actually received
+          example: 1
+        timestamp:
+          type: string
+          format: date-time
+          description: Response timestamp
+          example: "2025-11-18T09:18:48Z"
+        topic:
+          type: string
+          description: Requested topic
+          example: "signature"
+
+    ProcessedRequest:
+      type: object
+      required:
+        - processed
+      properties:
+        processed:
+          type: string
+          description: X-SMTS-Message-ID to confirm processing
+          example: "20251118121743-9a587e3a"
+
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: LDAP Basic Authentication only - user roles checked via internal YAML configuration
+
+  headers:
+    X-SMTS-Message-ID:
+      description: Assigned message ID that should be used in subsequent requests to Corporate API
+      schema:
+        type: string
+        example: "20240115103000-abc123def456"
+
+  examples:
+    EXT_SMTS_Curl_Example:
+      summary: Ready-to-use curl command for EXT SMTS
+      value: |
+        curl -X POST "http://smts_ext/send?topic=signature" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Basic Base64-encoded-username-and-password" \
+          -d '{ "content": "MEUCIQCUw46tibIDsqMFF7qwjl+3tJUId1/DOjFWbhNmbmsk/wIgNfOu+y/c6KQ+VKHBP395EE1UQbL4PNfcwpvKaPZAn8s=", "publicKey.content": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0k109Ci0tLS0tRU5DIENFUlRJRklDQVRFLS0tLS0K" }'
+
+    INT_Receive_Curl_Example:
+      summary: Ready-to-use curl command for INT SMTS receive
+      value: |
+        curl -X GET "http://smts_int/receive?topic=signature&count=1" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Basic Base64-encoded-username-and-password"
+
+    INT_Processed_Curl_Example:
+      summary: Ready-to-use curl command for INT SMTS processed confirmation
+      value: |
+        curl -X POST "http://smts_int/processed?topic=signature" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Basic Base64-encoded-username-and-password" \
+          -d '{ "processed": "20251118121743-9a587e3a" }'
