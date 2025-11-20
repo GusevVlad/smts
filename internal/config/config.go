@@ -60,11 +60,11 @@ func (l *Loader) LoadConfig(configPath string) (*types.Config, error) {
 
 	// Debug: Check if topics key exists in the configuration
 	if v.IsSet("topics") {
-		l.logger.Debug("Topics key found in configuration", zap.String("deployment", config.Deployment.Type))
+		l.logger.Debug("Topics key found in configuration")
 		topicsMap := v.GetStringMap("topics")
 		l.logger.Debug("Topics map content", zap.Any("topics", topicsMap), zap.Int("topics_count", len(topicsMap)))
 	} else {
-		l.logger.Debug("Topics key NOT found in configuration", zap.String("deployment", config.Deployment.Type))
+		l.logger.Debug("Topics key NOT found in configuration")
 	}
 
 	// Unmarshal configuration
@@ -107,15 +107,13 @@ func (l *Loader) LoadConfig(configPath string) (*types.Config, error) {
 
 	// Debug: Log topics configuration after unmarshaling
 	l.logger.Debug("Configuration unmarshaled",
-		zap.Int("topics_count", len(config.Topics.Topics)),
-		zap.String("deployment", config.Deployment.Type))
+		zap.Int("topics_count", len(config.Topics.Topics)))
 	
 	// Debug: Log all topics found
 	for topicName, topic := range config.Topics.Topics {
 		l.logger.Debug("Found topic in config",
 			zap.String("topic", topicName),
-			zap.String("description", topic.Description),
-			zap.String("deployment", config.Deployment.Type))
+			zap.String("description", topic.Description))
 	}
 
 	// Validate configuration
@@ -203,8 +201,7 @@ func (l *Loader) ValidateConfig(config *types.Config) error {
 // validateTopics validates the topics configuration
 func (l *Loader) validateTopics(topics types.TopicsConfig, deploymentType string) error {
 	if len(topics.Topics) == 0 {
-		l.logger.Warn("No topics configured, service will not process any messages",
-			zap.String("deployment", deploymentType))
+		l.logger.Warn("No topics configured, service will not process any messages")
 	}
 
 	for topicName, topic := range topics.Topics {
@@ -272,8 +269,7 @@ func (l *Loader) LoadTopicsConfig(topicsPath string, deploymentType string) (*ty
 		}
 
 		if topicsPath == "" {
-			l.logger.Warn("No topics configuration file found, using empty configuration",
-				zap.String("deployment", deploymentType))
+			l.logger.Warn("No topics configuration file found, using empty configuration")
 			return &types.TopicsConfig{
 				Topics: make(map[string]types.TopicPermission),
 			}, nil

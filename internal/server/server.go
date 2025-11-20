@@ -22,7 +22,6 @@ import (
 	"smts/pkg/types"
 	"smts/pkg/utils"
 
-	natsio "github.com/nats-io/nats.go"
 	"go.uber.org/zap"
 )
 
@@ -41,6 +40,8 @@ type Server struct {
 	publisher        *nats.Publisher
 	httpServer       *http.Server
 	ldapMiddleware   *LDAPMiddleware
+	httpUtilities    *HTTPUtilities
+	messageRetriever *MessageRetriever
 	running          bool
 }
 
@@ -124,6 +125,9 @@ func NewServer(configPath string) (*Server, error) {
 	// Create LDAP middleware for main server
 	ldapMiddleware := NewLDAPMiddleware(&cfg.LDAP, logger)
 
+	httpUtilities := NewHTTPUtilities(logger)
+	messageRetriever := NewMessageRetriever(logger)
+	
 	server := &Server{
 		config:           cfg,
 		logger:           logger,
@@ -137,6 +141,8 @@ func NewServer(configPath string) (*Server, error) {
 		healthServer:     healthServer,
 		messageAPIServer: messageAPIServer,
 		ldapMiddleware:   ldapMiddleware,
+		httpUtilities:    httpUtilities,
+		messageRetriever: messageRetriever,
 	}
 
 	return server, nil
@@ -374,23 +380,14 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 		s.logger.Warn("Invalid HTTP method for message endpoint",
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path))
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		s.httpUtilities.SendErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	// Extract topic from URL path (remove "/send/" prefix)
-	if !strings.HasPrefix(r.URL.Path, "/send/") {
-		s.logger.Warn("Invalid endpoint for message handler",
-			zap.String("path", r.URL.Path))
-		http.Error(w, `{"error": "Invalid endpoint"}`, http.StatusNotFound)
-		return
-	}
-
-	topic := strings.TrimPrefix(r.URL.Path, "/send/")
-	if topic == "" {
-		s.logger.Warn("Missing topic in URL path",
-			zap.String("path", r.URL.Path))
-		http.Error(w, `{"error": "Topic is required in URL path"}`, http.StatusBadRequest)
+	// Extract topic from URL path
+	topic, valid := s.httpUtilities.ExtractTopicFromPath(r, "/send/")
+	if !valid {
+		s.httpUtilities.SendErrorResponse(w, http.StatusBadRequest, "Invalid endpoint or missing topic")
 		return
 	}
 
@@ -398,146 +395,63 @@ func (s *Server) messageHandler(w http.ResponseWriter, r *http.Request) {
 		zap.String("topic", topic),
 		zap.String("deployment", s.config.Deployment.Type))
 
-	// Check LDAP authorization for sending messages
-	if s.ldapMiddleware != nil && !s.ldapMiddleware.AuthorizeEndpoint(r, s.config.Deployment.Type, "send") {
-		s.logger.Warn("LDAP authorization denied for send endpoint",
-			zap.String("topic", topic),
-			zap.String("deployment", s.config.Deployment.Type))
-		http.Error(w, `{"error": "Access denied - insufficient permissions"}`, http.StatusForbidden)
+	// Validate topic and authorization
+	if !s.httpUtilities.ValidateTopicAndAuth(r, s.config, s.ldapMiddleware, topic, "send") {
+		s.httpUtilities.SendErrorResponse(w, http.StatusForbidden, "Access denied - insufficient permissions")
 		return
 	}
 
-	// Check authorization headers
-	apiKey := r.Header.Get("X-API-Key")
-	messageID := r.Header.Get("X-SMTS-Message-ID")
-	timestamp := r.Header.Get("X-SMTS-Timestamp")
-	source := r.Header.Get("X-SMTS-Source")
-
-	// Validate required headers
+	// Parse headers
+	apiKey, messageID, timestamp, source := s.httpUtilities.ParseMessageHeaders(r)
 	if apiKey == "" {
-		s.logger.Warn("Missing X-API-Key header in HTTP request",
-			zap.String("topic", topic))
-		http.Error(w, `{"error": "X-API-Key header is required"}`, http.StatusUnauthorized)
+		s.httpUtilities.SendErrorResponse(w, http.StatusUnauthorized, "X-API-Key header is required")
 		return
 	}
 
-	// Check if topic exists in configuration (basic validation)
-	if _, exists := s.config.Topics.Topics[topic]; !exists {
-		s.logger.Warn("Topic not found in configuration",
-			zap.String("topic", topic))
-		http.Error(w, `{"error": "Topic not found in configuration"}`, http.StatusBadRequest)
+	// Read request body
+	body, valid := s.httpUtilities.ReadRequestBody(r, topic)
+	if !valid {
+		s.httpUtilities.SendErrorResponse(w, http.StatusBadRequest, "Failed to read request body")
 		return
 	}
 
-	// Read message body
-	body, err := io.ReadAll(r.Body)
+	// Create message from request
+	msg, err := s.httpUtilities.CreateMessageFromRequest(r, topic, apiKey, messageID, timestamp, source, body)
 	if err != nil {
-		s.logger.Error("Failed to read request body",
+		s.logger.Error("Failed to create message from request",
 			zap.String("topic", topic),
 			zap.Error(err))
-		http.Error(w, `{"error": "Failed to read request body"}`, http.StatusBadRequest)
+		s.httpUtilities.SendErrorResponse(w, http.StatusInternalServerError, "Failed to create message")
 		return
-	}
-	defer r.Body.Close()
-
-	s.logger.Info("Read message body from HTTP request",
-		zap.String("topic", topic),
-		zap.Int("body_size", len(body)))
-
-	// Parse timestamp
-	var msgTimestamp time.Time
-	if timestamp != "" {
-		msgTimestamp, err = time.Parse(time.RFC3339, timestamp)
-		if err != nil {
-			s.logger.Warn("Invalid timestamp format, using current time",
-				zap.String("timestamp", timestamp),
-				zap.String("topic", topic),
-				zap.Error(err))
-			msgTimestamp = time.Now().UTC()
-		}
-	} else {
-		msgTimestamp = time.Now().UTC()
-	}
-
-	// Generate message ID if not provided
-	if messageID == "" {
-		messageID = nats.GenerateID()
-		s.logger.Info("Generated message ID for HTTP request",
-			zap.String("topic", topic),
-			zap.String("message_id", messageID))
-	}
-
-	// Set default source if not provided
-	if source == "" {
-		source = "http-client"
-	}
-
-	// Create message headers
-	headers := make(map[string]string)
-	for key, values := range r.Header {
-		if len(values) > 0 && strings.HasPrefix(strings.ToLower(key), "x-smts-") {
-			headers[key] = values[0]
-		}
-	}
-
-	// Add additional headers
-	headers["X-SMTS-API-Key"] = apiKey
-	headers["X-SMTS-Source"] = source
-
-	// Get client_sender from LDAP context
-	clientSender := ""
-	if userInfo, _ := userInfoFromContext(r.Context()); userInfo != nil {
-		clientSender = userInfo["uid"]
-	}
-
-	// Create message
-	msg := &types.Message{
-		ID:           messageID,
-		Timestamp:    msgTimestamp,
-		Topic:        topic,
-		Source:       source,
-		ClientSender: clientSender,
-		Headers:      headers,
-		Body:         body,
 	}
 
 	s.logger.Info("Publishing HTTP message to NATS",
 		zap.String("topic", topic),
-		zap.String("message_id", messageID),
-		zap.String("source", source),
-		zap.String("client_sender", clientSender),
-		zap.Time("message_timestamp", msgTimestamp))
+		zap.String("message_id", msg.ID),
+		zap.String("source", msg.Source),
+		zap.String("client_sender", msg.ClientSender),
+		zap.Time("message_timestamp", msg.Timestamp))
 
 	// Publish message to NATS
 	if err := s.publisher.PublishMessage(msg); err != nil {
 		s.logger.Error("Failed to publish message",
 			zap.String("topic", topic),
-			zap.String("message_id", messageID),
-			zap.String("source", source),
+			zap.String("message_id", msg.ID),
+			zap.String("source", msg.Source),
 			zap.Error(err))
-		http.Error(w, `{"error": "Failed to publish message to stream"}`, http.StatusInternalServerError)
+		s.httpUtilities.SendErrorResponse(w, http.StatusInternalServerError, "Failed to publish message to stream")
 		return
 	}
 
 	s.logger.Info("HTTP message published successfully to NATS",
 		zap.String("topic", topic),
-		zap.String("message_id", messageID),
-		zap.String("source", source),
-		zap.String("client_sender", clientSender),
+		zap.String("message_id", msg.ID),
+		zap.String("source", msg.Source),
+		zap.String("client_sender", msg.ClientSender),
 		zap.String("deployment", s.config.Deployment.Type))
 
 	// Return success response
-	response := map[string]interface{}{
-		"status":     "delivered",
-		"message_id": messageID,
-		"topic":      topic,
-		"timestamp":  time.Now().UTC().Format(time.RFC3339),
-		"deployment": s.config.Deployment.Type,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	s.httpUtilities.SendSuccessResponse(w, msg.ID, topic, s.config.Deployment.Type, nil)
 }
 
 // corporateMessageHandler handles incoming corporate messages from corporate API (Flow 2: INT → EXT)
@@ -551,23 +465,14 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 		s.logger.Warn("Invalid HTTP method for corporate message endpoint",
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path))
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		s.httpUtilities.SendErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	// Extract topic from URL path (remove "/corp_message/" prefix)
-	if !strings.HasPrefix(r.URL.Path, "/corp_message/") {
-		s.logger.Warn("Invalid endpoint for corporate message handler",
-			zap.String("path", r.URL.Path))
-		http.Error(w, `{"error": "Invalid endpoint"}`, http.StatusNotFound)
-		return
-	}
-
-	topic := strings.TrimPrefix(r.URL.Path, "/corp_message/")
-	if topic == "" {
-		s.logger.Warn("Missing topic in URL path for corporate message",
-			zap.String("path", r.URL.Path))
-		http.Error(w, `{"error": "Topic is required in URL path"}`, http.StatusBadRequest)
+	// Extract topic from URL path
+	topic, valid := s.httpUtilities.ExtractTopicFromPath(r, "/corp_message/")
+	if !valid {
+		s.httpUtilities.SendErrorResponse(w, http.StatusBadRequest, "Invalid endpoint or missing topic")
 		return
 	}
 
@@ -575,154 +480,88 @@ func (s *Server) corporateMessageHandler(w http.ResponseWriter, r *http.Request)
 		zap.String("topic", topic),
 		zap.String("deployment", s.config.Deployment.Type))
 
-	// Check LDAP authorization for corporate message endpoint
-	if s.ldapMiddleware != nil && !s.ldapMiddleware.AuthorizeEndpoint(r, s.config.Deployment.Type, "corp_message") {
-		s.logger.Warn("LDAP authorization denied for corp_message endpoint",
-			zap.String("topic", topic),
-			zap.String("deployment", s.config.Deployment.Type))
-		http.Error(w, `{"error": "Access denied - insufficient permissions"}`, http.StatusForbidden)
+	// Validate topic and authorization
+	if !s.httpUtilities.ValidateTopicAndAuth(r, s.config, s.ldapMiddleware, topic, "corp_message") {
+		s.httpUtilities.SendErrorResponse(w, http.StatusForbidden, "Access denied - insufficient permissions")
 		return
 	}
 
-	// Check authorization headers
-	apiKey := r.Header.Get("X-API-Key")
-	messageID := r.Header.Get("X-SMTS-Message-ID")
-	timestamp := r.Header.Get("X-SMTS-Timestamp")
-	source := r.Header.Get("X-SMTS-Source")
-
-	// Validate required headers
+	// Parse headers
+	apiKey, messageID, timestamp, source := s.httpUtilities.ParseMessageHeaders(r)
 	if apiKey == "" {
-		s.logger.Warn("Missing X-API-Key header in corporate message request",
-			zap.String("topic", topic))
-		http.Error(w, `{"error": "X-API-Key header is required"}`, http.StatusUnauthorized)
+		s.httpUtilities.SendErrorResponse(w, http.StatusUnauthorized, "X-API-Key header is required")
 		return
 	}
 
-	// Check if topic exists in configuration (basic validation)
-	if _, exists := s.config.Topics.Topics[topic]; !exists {
-		s.logger.Warn("Topic not found in configuration for corporate message",
-			zap.String("topic", topic))
-		http.Error(w, `{"error": "Topic not found in configuration"}`, http.StatusBadRequest)
-		return
-	}
-
-	// Read message body
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		s.logger.Error("Failed to read request body for corporate message",
-			zap.String("topic", topic),
-			zap.Error(err))
-		http.Error(w, `{"error": "Failed to read request body"}`, http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
-
-	s.logger.Info("Read corporate message body from HTTP request",
-		zap.String("topic", topic),
-		zap.Int("body_size", len(body)))
-
-	// Parse timestamp
-	var msgTimestamp time.Time
-	if timestamp != "" {
-		msgTimestamp, err = time.Parse(time.RFC3339, timestamp)
-		if err != nil {
-			s.logger.Warn("Invalid timestamp format for corporate message, using current time",
-				zap.String("timestamp", timestamp),
-				zap.String("topic", topic),
-				zap.Error(err))
-			msgTimestamp = time.Now().UTC()
-		}
-	} else {
-		msgTimestamp = time.Now().UTC()
-	}
-
-	// Generate message ID if not provided
-	if messageID == "" {
-		messageID = nats.GenerateID()
-		s.logger.Info("Generated message ID for corporate message",
-			zap.String("topic", topic),
-			zap.String("message_id", messageID))
-	}
-
-	// Set default source if not provided
+	// Set default source for corporate messages
 	if source == "" {
 		source = "corporate-api"
 	}
 
-	// Create message headers
-	headers := make(map[string]string)
-	for key, values := range r.Header {
-		if len(values) > 0 && strings.HasPrefix(strings.ToLower(key), "x-smts-") {
-			headers[key] = values[0]
-		}
+	// Read request body
+	body, valid := s.httpUtilities.ReadRequestBody(r, topic)
+	if !valid {
+		s.httpUtilities.SendErrorResponse(w, http.StatusBadRequest, "Failed to read request body")
+		return
 	}
 
-	// Add additional headers
-	headers["X-SMTS-API-Key"] = apiKey
-	headers["X-SMTS-Source"] = source
-
-	// Get client_sender from LDAP context
-	clientSender := ""
-	if userInfo, _ := userInfoFromContext(r.Context()); userInfo != nil {
-		clientSender = userInfo["uid"]
+	// Create message from request
+	msg, err := s.httpUtilities.CreateMessageFromRequest(r, topic, apiKey, messageID, timestamp, source, body)
+	if err != nil {
+		s.logger.Error("Failed to create corporate message from request",
+			zap.String("topic", topic),
+			zap.Error(err))
+		s.httpUtilities.SendErrorResponse(w, http.StatusInternalServerError, "Failed to create message")
+		return
 	}
 
 	// For corporate messages (Flow 2), publish directly to external stream
 	// This avoids the client consumer processing loop and makes messages available for external clients
-	// Store only the actual content in the body to avoid duplication
 	externalMsg := &types.Message{
-		ID:           messageID,
-		Timestamp:    msgTimestamp,
-		Topic:        "external." + topic, // Use external subject pattern
-		Source:       source,
-		ClientSender: clientSender,
-		Headers:      headers,
-		Body:         body, // Store only the actual content, not the full message structure
+		ID:           msg.ID,
+		Timestamp:    msg.Timestamp,
+		Topic:        "external." + msg.Topic, // Use external subject pattern
+		Source:       msg.Source,
+		ClientSender: msg.ClientSender,
+		Headers:      msg.Headers,
+		Body:         msg.Body, // Store only the actual content, not the full message structure
 	}
 
 	s.logger.Info("Publishing corporate message to external NATS stream",
 		zap.String("topic", topic),
-		zap.String("message_id", messageID),
-		zap.String("source", source),
-		zap.String("client_sender", clientSender),
+		zap.String("message_id", msg.ID),
+		zap.String("source", msg.Source),
+		zap.String("client_sender", msg.ClientSender),
 		zap.String("external_topic", externalMsg.Topic),
 		zap.String("stream", s.config.NATS.ExternalStream.Name),
-		zap.Time("message_timestamp", msgTimestamp))
+		zap.Time("message_timestamp", msg.Timestamp))
 
 	// Publish message directly to external stream
 	if err := s.publisher.PublishMessageToStream(externalMsg, s.config.NATS.ExternalStream.Name); err != nil {
 		s.logger.Error("Failed to publish corporate message to external stream",
 			zap.String("topic", topic),
-			zap.String("message_id", messageID),
-			zap.String("source", source),
+			zap.String("message_id", msg.ID),
+			zap.String("source", msg.Source),
 			zap.String("external_topic", externalMsg.Topic),
 			zap.Error(err))
-		http.Error(w, `{"error": "Failed to publish message to external stream"}`, http.StatusInternalServerError)
+		s.httpUtilities.SendErrorResponse(w, http.StatusInternalServerError, "Failed to publish message to external stream")
 		return
 	}
 
 	s.logger.Info("Corporate message published successfully to external stream",
 		zap.String("topic", topic),
-		zap.String("message_id", messageID),
-		zap.String("source", source),
-		zap.String("client_sender", clientSender),
+		zap.String("message_id", msg.ID),
+		zap.String("source", msg.Source),
+		zap.String("client_sender", msg.ClientSender),
 		zap.String("external_topic", externalMsg.Topic),
 		zap.String("stream", s.config.NATS.ExternalStream.Name),
 		zap.String("deployment", s.config.Deployment.Type))
 
-	// Return success response
-	response := map[string]interface{}{
-		"status":     "delivered",
-		"message_id": messageID,
-		"topic":      topic,
-		"timestamp":  time.Now().UTC().Format(time.RFC3339),
-		"deployment": s.config.Deployment.Type,
-		"flow":       "int_to_ext",
+	// Return success response with flow information
+	additionalFields := map[string]interface{}{
+		"flow": "int_to_ext",
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	s.httpUtilities.SendSuccessResponse(w, msg.ID, topic, s.config.Deployment.Type, additionalFields)
 }
 
 // sendHandler handles the /send endpoint according to OpenAPI specification
@@ -735,7 +574,7 @@ func (s *Server) sendHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		s.logger.Warn("Invalid HTTP method for send endpoint",
 			zap.String("method", r.Method))
-		JSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		s.httpUtilities.JSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -743,7 +582,7 @@ func (s *Server) sendHandler(w http.ResponseWriter, r *http.Request) {
 	if s.ldapMiddleware != nil && !s.ldapMiddleware.AuthorizeEndpoint(r, s.config.Deployment.Type, "send") {
 		s.logger.Warn("LDAP authorization denied for send endpoint",
 			zap.String("deployment", s.config.Deployment.Type))
-		JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
+		s.httpUtilities.JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
 		return
 	}
 
@@ -751,7 +590,7 @@ func (s *Server) sendHandler(w http.ResponseWriter, r *http.Request) {
 	topic := r.URL.Query().Get("topic")
 	if topic == "" {
 		s.logger.Warn("Missing topic parameter in send request")
-		JSONError(w, "topic parameter is required", http.StatusBadRequest)
+		s.httpUtilities.JSONError(w, "topic parameter is required", http.StatusBadRequest)
 		return
 	}
 
@@ -761,7 +600,7 @@ func (s *Server) sendHandler(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("Failed to read request body for send endpoint",
 			zap.String("topic", topic),
 			zap.Error(err))
-		JSONError(w, "Failed to read request body", http.StatusBadRequest)
+		s.httpUtilities.JSONError(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
@@ -799,7 +638,7 @@ func (s *Server) sendHandler(w http.ResponseWriter, r *http.Request) {
 			zap.String("topic", topic),
 			zap.String("message_id", messageID),
 			zap.Error(err))
-		JSONError(w, "Failed to publish message to stream", http.StatusInternalServerError)
+		s.httpUtilities.JSONError(w, "Failed to publish message to stream", http.StatusInternalServerError)
 		return
 	}
 
@@ -830,7 +669,7 @@ func (s *Server) receiveHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.logger.Warn("Invalid HTTP method for receive endpoint",
 			zap.String("method", r.Method))
-		JSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		s.httpUtilities.JSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -838,7 +677,7 @@ func (s *Server) receiveHandler(w http.ResponseWriter, r *http.Request) {
 	if s.ldapMiddleware != nil && !s.ldapMiddleware.AuthorizeEndpoint(r, s.config.Deployment.Type, "read") {
 		s.logger.Warn("LDAP authorization denied for receive endpoint",
 			zap.String("deployment", s.config.Deployment.Type))
-		JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
+		s.httpUtilities.JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
 		return
 	}
 
@@ -846,7 +685,7 @@ func (s *Server) receiveHandler(w http.ResponseWriter, r *http.Request) {
 	topic := r.URL.Query().Get("topic")
 	if topic == "" {
 		s.logger.Warn("Missing topic parameter in receive request")
-		JSONError(w, "topic parameter is required", http.StatusBadRequest)
+		s.httpUtilities.JSONError(w, "topic parameter is required", http.StatusBadRequest)
 		return
 	}
 
@@ -873,182 +712,16 @@ func (s *Server) receiveHandler(w http.ResponseWriter, r *http.Request) {
 		zap.Int("count", count),
 		zap.String("client_receiver", clientReceiver))
 
-	// Check if NATS client is available
-	if s.natsClient == nil {
-		s.logger.Error("NATS client not available for receive endpoint")
-		JSONError(w, "Service not properly initialized", http.StatusInternalServerError)
-		return
-	}
-
-	js := s.natsClient.GetJetStream()
-	if js == nil {
-		s.logger.Error("JetStream context not available")
-		JSONError(w, "JetStream not available", http.StatusInternalServerError)
-		return
-	}
-
-	// Read messages from NATS stream
-	messages := make([]map[string]interface{}, 0)
-	received := 0
-
-	// Use the external consumer for reading messages
-	consumerName := s.config.NATS.ExternalConsumer.DurableName
-	streamName := s.config.NATS.ExternalStream.Name
-	externalTopic := "external." + topic
-
-	// Check if the consumer exists
-	_, err := js.ConsumerInfo(streamName, consumerName)
+	// Use shared message retriever for complex processing
+	messages, received, err := s.messageRetriever.RetrieveMessagesWithComplexProcessing(
+		s.natsClient, s.config, topic, count, clientReceiver)
 	if err != nil {
-		s.logger.Error("Failed to get consumer info for receive endpoint",
-			zap.String("stream", streamName),
-			zap.String("consumer", consumerName),
+		s.logger.Error("Failed to retrieve messages for receive endpoint",
 			zap.String("topic", topic),
+			zap.Int("count", count),
 			zap.Error(err))
-		JSONError(w, "Failed to access message stream consumer", http.StatusInternalServerError)
+		s.httpUtilities.JSONError(w, "Failed to retrieve messages", http.StatusInternalServerError)
 		return
-	}
-
-	// Subscribe to messages
-	sub, err := js.PullSubscribe(externalTopic, consumerName, natsio.Bind(streamName, consumerName))
-	if err != nil {
-		s.logger.Error("Failed to subscribe to messages for receive endpoint",
-			zap.String("topic", topic),
-			zap.String("external_topic", externalTopic),
-			zap.String("consumer", consumerName),
-			zap.Error(err))
-		JSONError(w, "Failed to subscribe to messages", http.StatusInternalServerError)
-		return
-	}
-	defer sub.Unsubscribe()
-
-	// Fetch messages
-	fetchedMsgs, err := sub.Fetch(count, natsio.MaxWait(5*time.Second))
-	if err != nil && err != natsio.ErrTimeout {
-		s.logger.Error("Failed to fetch messages for receive endpoint",
-			zap.String("topic", topic),
-			zap.Int("requested_count", count),
-			zap.Error(err))
-		JSONError(w, "Failed to fetch messages", http.StatusInternalServerError)
-		return
-	}
-
-	// Process fetched messages
-	for _, msg := range fetchedMsgs {
-		received++
-
-		// Extract actual content from the message structure
-		var msgData map[string]interface{}
-		var actualBody interface{}
-		var smtsHeaders map[string]interface{}
-		
-		if err := json.Unmarshal(msg.Data, &msgData); err == nil {
-			// Debug: log the message structure to understand what we're dealing with
-			s.logger.Debug("Processing message structure for receive endpoint",
-				zap.Any("msg_data", msgData),
-				zap.String("topic", topic))
-			
-			// Check if this is a nested message structure (from ArtemisMQ)
-			if bodyField, exists := msgData["body"]; exists {
-				// Check if the body field itself contains nested structure
-				if nestedBody, ok := bodyField.(map[string]interface{}); ok {
-					// This is a complex nested structure - check for inner body
-					if innerBody, exists := nestedBody["body"]; exists {
-						// Extract the actual content from the nested structure
-						actualBody = innerBody
-						// Extract headers from the nested structure if available
-						if nestedHeaders, exists := nestedBody["headers"]; exists {
-							if headersMap, ok := nestedHeaders.(map[string]interface{}); ok {
-								smtsHeaders = headersMap
-							}
-						}
-					} else {
-						// Use the nested body as the actual content
-						actualBody = bodyField
-						// Extract headers from the nested structure if available
-						if nestedHeaders, exists := nestedBody["headers"]; exists {
-							if headersMap, ok := nestedHeaders.(map[string]interface{}); ok {
-								smtsHeaders = headersMap
-							}
-						}
-					}
-				} else {
-					// This is a simple nested message structure - extract the actual content
-					actualBody = bodyField
-				}
-			} else if nestedBody, exists := msgData["Body"]; exists {
-				// Check for capitalized Body field (from ArtemisMQ)
-				actualBody = nestedBody
-			} else {
-				// This is a direct message - use the raw data as body
-				actualBody = string(msg.Data)
-			}
-			
-			// If we haven't found headers in the nested structure, check the outer message
-			if smtsHeaders == nil {
-				if headersField, exists := msgData["headers"]; exists {
-					if headersMap, ok := headersField.(map[string]interface{}); ok {
-						smtsHeaders = headersMap
-					}
-				}
-			}
-		} else {
-			// If parsing fails, use the raw data
-			actualBody = string(msg.Data)
-		}
-
-		// Create clean headers structure
-		cleanHeaders := map[string]interface{}{
-			"Content-Type": "application/json",
-		}
-		
-		// Extract SMTS headers from the message data
-		if smtsHeaders != nil {
-			if messageID, exists := smtsHeaders["X-SMTS-Message-ID"]; exists {
-				cleanHeaders["X-SMTS-Message-ID"] = messageID
-			}
-			if timestamp, exists := smtsHeaders["X-SMTS-Timestamp"]; exists {
-				cleanHeaders["X-SMTS-Timestamp"] = timestamp
-			}
-			// Also check for lowercase variants
-			if messageID, exists := smtsHeaders["x-smts-message-id"]; exists {
-				cleanHeaders["X-SMTS-Message-ID"] = messageID
-			}
-			if timestamp, exists := smtsHeaders["x-smts-timestamp"]; exists {
-				cleanHeaders["X-SMTS-Timestamp"] = timestamp
-			}
-		}
-		
-		// Fallback to NATS headers if SMTS headers are not found
-		if cleanHeaders["X-SMTS-Message-ID"] == nil || cleanHeaders["X-SMTS-Message-ID"] == "" {
-			if msg.Header != nil {
-				if values := msg.Header.Values("X-SMTS-Message-ID"); len(values) > 0 {
-					cleanHeaders["X-SMTS-Message-ID"] = values[0]
-				}
-			}
-		}
-		if cleanHeaders["X-SMTS-Timestamp"] == nil || cleanHeaders["X-SMTS-Timestamp"] == "" {
-			if msg.Header != nil {
-				if values := msg.Header.Values("X-SMTS-Timestamp"); len(values) > 0 {
-					cleanHeaders["X-SMTS-Timestamp"] = values[0]
-				}
-			}
-		}
-
-		messageData := map[string]interface{}{
-			"body":    actualBody,
-			"headers": cleanHeaders,
-			"topic":   topic,
-		}
-
-		messages = append(messages, messageData)
-
-		// Acknowledge the message
-		if err := msg.Ack(); err != nil {
-			s.logger.Warn("Failed to acknowledge message in receive endpoint",
-				zap.String("message_id", fmt.Sprintf("%v", cleanHeaders["X-SMTS-Message-ID"])),
-				zap.String("topic", topic),
-				zap.Error(err))
-		}
 	}
 
 	s.logger.Info("Receive request completed successfully",
@@ -1067,7 +740,7 @@ func (s *Server) receiveHandler(w http.ResponseWriter, r *http.Request) {
 		"topic":     topic,
 	}
 
-	JSONSuccess(w, response, http.StatusOK)
+	s.httpUtilities.JSONSuccess(w, response, http.StatusOK)
 }
 
 // processedHandler handles the /processed endpoint according to OpenAPI specification
@@ -1080,7 +753,7 @@ func (s *Server) processedHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		s.logger.Warn("Invalid HTTP method for processed endpoint",
 			zap.String("method", r.Method))
-		JSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		s.httpUtilities.JSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -1088,7 +761,7 @@ func (s *Server) processedHandler(w http.ResponseWriter, r *http.Request) {
 	if s.ldapMiddleware != nil && !s.ldapMiddleware.AuthorizeEndpoint(r, s.config.Deployment.Type, "send") {
 		s.logger.Warn("LDAP authorization denied for processed endpoint",
 			zap.String("deployment", s.config.Deployment.Type))
-		JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
+		s.httpUtilities.JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
 		return
 	}
 
@@ -1096,7 +769,7 @@ func (s *Server) processedHandler(w http.ResponseWriter, r *http.Request) {
 	topic := r.URL.Query().Get("topic")
 	if topic == "" {
 		s.logger.Warn("Missing topic parameter in processed request")
-		JSONError(w, "topic parameter is required", http.StatusBadRequest)
+		s.httpUtilities.JSONError(w, "topic parameter is required", http.StatusBadRequest)
 		return
 	}
 
@@ -1109,13 +782,13 @@ func (s *Server) processedHandler(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("Failed to parse processed request body",
 			zap.String("topic", topic),
 			zap.Error(err))
-		JSONError(w, "Invalid JSON in request body", http.StatusBadRequest)
+		s.httpUtilities.JSONError(w, "Invalid JSON in request body", http.StatusBadRequest)
 		return
 	}
 
 	if request.Processed == "" {
 		s.logger.Warn("Missing processed field in request body")
-		JSONError(w, "processed field is required", http.StatusBadRequest)
+		s.httpUtilities.JSONError(w, "processed field is required", http.StatusBadRequest)
 		return
 	}
 
@@ -1135,7 +808,7 @@ func (s *Server) processedHandler(w http.ResponseWriter, r *http.Request) {
 		"result": "ok",
 	}
 
-	JSONSuccess(w, response, http.StatusOK)
+	s.httpUtilities.JSONSuccess(w, response, http.StatusOK)
 }
 
 // Run starts the server and waits for shutdown

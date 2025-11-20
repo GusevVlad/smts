@@ -26,55 +26,16 @@ func NewPublisher(client *Client, logger *zap.Logger) *Publisher {
 
 // PublishMessage publishes a message to NATS JetStream
 func (p *Publisher) PublishMessage(msg *types.Message) error {
-	if p.client == nil || p.client.js == nil {
-		return types.NewSMTSError(types.ErrNATSPublish, "NATS client not initialized")
-	}
-
-	// Validate the message
-	if err := p.validateMessage(msg); err != nil {
-		return err
-	}
-
-	// Convert message to JSON
-	messageData, err := json.Marshal(msg)
-	if err != nil {
-		return types.WrapSMTSError(err, types.ErrNATSPublish, "Failed to marshal message to JSON")
-	}
-
-	// Create NATS message with headers
-	natsMsg := &nats.Msg{
-		Subject: msg.Topic,
-		Data:    messageData,
-		Header:  make(nats.Header),
-	}
-
-	// Add SMTS headers
-	natsMsg.Header.Set("smts-message-id", msg.ID)
-	natsMsg.Header.Set("smts-timestamp", msg.Timestamp.Format(time.RFC3339))
-	natsMsg.Header.Set("smts-source", msg.Source)
-
-	// Add custom headers
-	for key, value := range msg.Headers {
-		natsMsg.Header.Set(key, value)
-	}
-
-	// Publish the message
-	ack, err := p.client.js.PublishMsg(natsMsg)
-	if err != nil {
-		return types.WrapSMTSError(err, types.ErrNATSPublish, "Failed to publish message")
-	}
-
-	p.logger.Debug("Message published successfully",
-		zap.String("message_id", msg.ID),
-		zap.String("topic", msg.Topic),
-		zap.String("stream", ack.Stream),
-		zap.Uint64("sequence", ack.Sequence))
-
-	return nil
+	return p.publishMessageInternal(msg, "")
 }
 
 // PublishMessageToStream publishes a message to a specific NATS JetStream
 func (p *Publisher) PublishMessageToStream(msg *types.Message, streamName string) error {
+	return p.publishMessageInternal(msg, streamName)
+}
+
+// publishMessageInternal is the unified internal method for publishing messages
+func (p *Publisher) publishMessageInternal(msg *types.Message, streamName string) error {
 	if p.client == nil || p.client.js == nil {
 		return types.NewSMTSError(types.ErrNATSPublish, "NATS client not initialized")
 	}
@@ -107,17 +68,34 @@ func (p *Publisher) PublishMessageToStream(msg *types.Message, streamName string
 		natsMsg.Header.Set(key, value)
 	}
 
-	// Publish the message to the specified stream
-	ack, err := p.client.js.PublishMsg(natsMsg, nats.ExpectStream(streamName))
-	if err != nil {
-		return types.WrapSMTSError(err, types.ErrNATSPublish, "Failed to publish message to stream")
+	// Publish the message with optional stream expectation
+	var ack *nats.PubAck
+	if streamName != "" {
+		ack, err = p.client.js.PublishMsg(natsMsg, nats.ExpectStream(streamName))
+	} else {
+		ack, err = p.client.js.PublishMsg(natsMsg)
 	}
 
-	p.logger.Debug("Message published to stream successfully",
+	if err != nil {
+		if streamName != "" {
+			return types.WrapSMTSError(err, types.ErrNATSPublish, "Failed to publish message to stream")
+		}
+		return types.WrapSMTSError(err, types.ErrNATSPublish, "Failed to publish message")
+	}
+
+	// Log the successful publication
+	logFields := []zap.Field{
 		zap.String("message_id", msg.ID),
 		zap.String("topic", msg.Topic),
 		zap.String("stream", ack.Stream),
-		zap.Uint64("sequence", ack.Sequence))
+		zap.Uint64("sequence", ack.Sequence),
+	}
+
+	if streamName != "" {
+		p.logger.Debug("Message published to stream successfully", logFields...)
+	} else {
+		p.logger.Debug("Message published successfully", logFields...)
+	}
 
 	return nil
 }

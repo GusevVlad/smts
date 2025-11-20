@@ -2,37 +2,40 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"smts/internal/nats"
 	"smts/pkg/types"
 
-	natsio "github.com/nats-io/nats.go"
 	"go.uber.org/zap"
 )
 
 // MessageAPIServer handles message operations
 type MessageAPIServer struct {
-	config         *types.Config
-	logger         *zap.Logger
-	server         *http.Server
-	natsClient     *nats.Client
-	ldapMiddleware *LDAPMiddleware
+	config          *types.Config
+	logger          *zap.Logger
+	server          *http.Server
+	natsClient      *nats.Client
+	ldapMiddleware  *LDAPMiddleware
+	messageRetriever *MessageRetriever
+	httpUtilities   *HTTPUtilities
 }
 
 // NewMessageAPIServer creates a new message API server
 func NewMessageAPIServer(config *types.Config, logger *zap.Logger) *MessageAPIServer {
 	ldapMiddleware := NewLDAPMiddleware(&config.LDAP, logger)
+	messageRetriever := NewMessageRetriever(logger)
+	httpUtilities := NewHTTPUtilities(logger)
 
 	return &MessageAPIServer{
-		config:         config,
-		logger:         logger,
-		ldapMiddleware: ldapMiddleware,
+		config:          config,
+		logger:          logger,
+		ldapMiddleware:  ldapMiddleware,
+		messageRetriever: messageRetriever,
+		httpUtilities:   httpUtilities,
 	}
 }
 
@@ -106,7 +109,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 		zap.String("deployment", m.config.Deployment.Type),
 		zap.String("client_receiver", clientReceiver))
 
-	if !RequireMethod(w, r, http.MethodGet) {
+	if !m.httpUtilities.RequireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -117,7 +120,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	if topic == "" {
 		m.logger.Warn("Missing topic parameter in message API request",
 			zap.String("path", r.URL.Path))
-		JSONError(w, "topic parameter is required", http.StatusBadRequest)
+		m.httpUtilities.JSONError(w, "topic parameter is required", http.StatusBadRequest)
 		return
 	}
 
@@ -130,9 +133,9 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 	if m.ldapMiddleware != nil && !m.ldapMiddleware.AuthorizeEndpoint(r, m.config.Deployment.Type, "read") {
 		m.logger.Warn("LDAP authorization denied for read endpoint",
 			zap.String("topic", topic),
-			zap.String("deployment", m.config.Deployment.Type))
-			zap.String("client_receiver", clientReceiver)
-		JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
+			zap.String("deployment", m.config.Deployment.Type),
+			zap.String("client_receiver", clientReceiver))
+		m.httpUtilities.JSONError(w, "Access denied - insufficient permissions", http.StatusForbidden)
 		return
 	}
 
@@ -144,7 +147,7 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 				zap.String("topic", topic),
 				zap.String("count", countStr),
 				zap.Error(err))
-			JSONError(w, "count must be a positive integer", http.StatusBadRequest)
+			m.httpUtilities.JSONError(w, "count must be a positive integer", http.StatusBadRequest)
 			return
 		} else {
 			count = parsedCount
@@ -161,136 +164,16 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 		zap.Int("requested_count", count),
 		zap.String("deployment", m.config.Deployment.Type))
 
-
-	// Check if NATS client is available
-	if m.natsClient == nil {
-		m.logger.Error("NATS client not available for message API")
-		JSONError(w, "Message API not properly initialized", http.StatusInternalServerError)
-		return
-	}
-
-	js := m.natsClient.GetJetStream()
-	if js == nil {
-		m.logger.Error("JetStream context not available")
-		JSONError(w, "JetStream not available", http.StatusInternalServerError)
-		return
-	}
-
-	// Read messages from NATS stream
-	messages := make([]map[string]interface{}, 0)
-	received := 0
-
-	// For workqueue streams, we need to use the existing consumer
-	// Use the external consumer for reading incoming INT messages
-	consumerName := m.config.NATS.ExternalConsumer.DurableName
-	streamName := m.config.NATS.ExternalStream.Name
-
-	m.logger.Info("Accessing NATS stream for message retrieval",
-		zap.String("topic", topic),
-		zap.String("stream", streamName),
-		zap.String("consumer", consumerName))
-
-	// Check if the consumer exists
-	_, err := js.ConsumerInfo(streamName, consumerName)
+	// Use shared message retriever
+	messages, received, err := m.messageRetriever.RetrieveMessages(
+		m.natsClient, m.config, topic, count, clientReceiver)
 	if err != nil {
-		m.logger.Error("Failed to get consumer info",
-			zap.String("stream", streamName),
-			zap.String("consumer", consumerName),
+		m.logger.Error("Failed to retrieve messages for message API",
 			zap.String("topic", topic),
-			zap.String("client_receiver", clientReceiver),
+			zap.Int("count", count),
 			zap.Error(err))
-		JSONError(w, "Failed to access message stream consumer", http.StatusInternalServerError)
+		m.httpUtilities.JSONError(w, "Failed to retrieve messages", http.StatusInternalServerError)
 		return
-	}
-
-	// For external stream, use the external topic pattern
-	externalTopic := "external." + topic
-	sub, err := js.PullSubscribe(externalTopic, consumerName, natsio.Bind(streamName, consumerName))
-	if err != nil {
-		m.logger.Error("Failed to subscribe to messages",
-			zap.String("topic", topic),
-			zap.String("external_topic", externalTopic),
-			zap.String("consumer", consumerName),
-			zap.Error(err))
-		JSONError(w, "Failed to subscribe to messages", http.StatusInternalServerError)
-		return
-	}
-	defer sub.Unsubscribe()
-
-	m.logger.Info("Fetching messages from NATS stream",
-		zap.String("topic", topic),
-		zap.String("external_topic", externalTopic),
-		zap.Int("requested_count", count))
-
-	// Fetch messages
-	fetchedMsgs, err := sub.Fetch(count, natsio.MaxWait(5*time.Second))
-	if err != nil && err != natsio.ErrTimeout {
-		m.logger.Error("Failed to fetch messages",
-			zap.String("topic", topic),
-			zap.Int("requested_count", count),
-			zap.Error(err))
-		JSONError(w, "Failed to fetch messages", http.StatusInternalServerError)
-		return
-	}
-
-	m.logger.Info("Successfully fetched messages from NATS stream",
-		zap.String("topic", topic),
-		zap.Int("requested_count", count),
-		zap.Int("fetched_count", len(fetchedMsgs)))
-
-	// Process fetched messages
-	for _, msg := range fetchedMsgs {
-		received++
-
-		// Parse message headers
-		headers := make(map[string]string)
-		if msg.Header != nil {
-			for key, values := range msg.Header {
-				if len(values) > 0 {
-					headers[key] = values[0]
-				}
-			}
-		}
-
-		// Create message response - use original topic (remove "external." prefix)
-		originalTopic := topic
-		if strings.HasPrefix(topic, "external.") {
-			originalTopic = strings.TrimPrefix(topic, "external.")
-		}
-
-		// Extract actual content from the message structure
-		var msgData map[string]interface{}
-		var actualBody interface{}
-		if err := json.Unmarshal(msg.Data, &msgData); err == nil {
-			// If we can parse as a map, extract the body field
-			if bodyField, exists := msgData["body"]; exists {
-				actualBody = bodyField
-			} else {
-				// If no body field, use the raw data
-				actualBody = string(msg.Data)
-			}
-		} else {
-			// If parsing fails, use the raw data
-			actualBody = string(msg.Data)
-		}
-
-		messageData := map[string]interface{}{
-			"id":        headers["X-SMTS-Message-ID"],
-			"topic":     originalTopic,
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
-			"headers":   headers,
-			"body":      actualBody,
-		}
-
-		messages = append(messages, messageData)
-
-		// Acknowledge the message
-		if err := msg.Ack(); err != nil {
-			m.logger.Warn("Failed to acknowledge message",
-				zap.String("message_id", headers["X-SMTS-Message-ID"]),
-				zap.String("topic", topic),
-				zap.Error(err))
-		}
 	}
 
 	m.logger.Info("Message API retrieved messages successfully",
@@ -316,12 +199,12 @@ func (m *MessageAPIServer) messagesHandler(w http.ResponseWriter, r *http.Reques
 		zap.String("deployment", m.config.Deployment.Type),
 		zap.String("client_receiver", clientReceiver))
 
-	JSONSuccess(w, response, http.StatusOK)
+	m.httpUtilities.JSONSuccess(w, response, http.StatusOK)
 }
 
 // sendHandler handles message sending endpoint (for testing)
 func (m *MessageAPIServer) sendHandler(w http.ResponseWriter, r *http.Request) {
-	if !RequireMethod(w, r, http.MethodPost) {
+	if !m.httpUtilities.RequireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -330,12 +213,12 @@ func (m *MessageAPIServer) sendHandler(w http.ResponseWriter, r *http.Request) {
 		Message map[string]interface{} `json:"message"`
 	}
 
-	if !RequireJSONBody(w, r, &request) {
+	if !m.httpUtilities.RequireJSONBody(w, r, &request) {
 		return
 	}
 
 	if request.Topic == "" {
-		JSONError(w, "topic is required", http.StatusBadRequest)
+		m.httpUtilities.JSONError(w, "topic is required", http.StatusBadRequest)
 		return
 	}
 
@@ -347,6 +230,6 @@ func (m *MessageAPIServer) sendHandler(w http.ResponseWriter, r *http.Request) {
 		"deployment": m.config.Deployment.Type,
 	}
 
-	JSONSuccess(w, response, http.StatusOK)
+	m.httpUtilities.JSONSuccess(w, response, http.StatusOK)
 }
 

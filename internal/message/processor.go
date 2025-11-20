@@ -26,10 +26,12 @@ type Processor struct {
 	artemisPublisher ArtemisPublisher
 	logger          *zap.Logger
 	deployment      string
+	utilities       *MessageUtilities
 }
 
 // NewProcessor creates a new message processor
 func NewProcessor(config *types.Config, apiClient api.APIClient, natsClient nats.NATSClient, natsPublisher *nats.Publisher, artemisPublisher ArtemisPublisher, logger *zap.Logger) *Processor {
+	utilities := NewMessageUtilities(config, natsPublisher, logger)
 	return &Processor{
 		config:          config,
 		apiClient:       apiClient,
@@ -38,6 +40,7 @@ func NewProcessor(config *types.Config, apiClient api.APIClient, natsClient nats
 		artemisPublisher: artemisPublisher,
 		logger:          logger,
 		deployment:      config.Deployment.Type,
+		utilities:       utilities,
 	}
 }
 
@@ -241,106 +244,12 @@ func (p *Processor) processINTMessageToArtemis(ctx context.Context, msg *types.M
 
 // processEXTMessageFromCorporateAPI processes messages for EXT deployment that come from corporate API (Flow 2)
 func (p *Processor) processEXTMessageFromCorporateAPI(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error) {
-	p.logger.Info("Processing EXT message from corporate API for external stream",
-		append(utils.LoggerFields("ext_from_corp_api", p.deployment, msg.ID, msg.Topic),
-			zap.String("source", msg.Source))...)
-	
-	// Flow 2: Message from corporate API (via ArtemisMQ) - store in external NATS stream for external clients
-	
-	// Create a copy of the message with the correct subject for external stream
-	// Store only the actual content in the body to avoid duplication
-	externalMsg := &types.Message{
-		ID:           msg.ID,
-		Timestamp:    msg.Timestamp,
-		Topic:        "external." + msg.Topic,  // Use external subject pattern
-		Source:       msg.Source,
-		ClientSender: msg.ClientSender,
-		Headers:      msg.Headers,
-		Body:         msg.Body,  // Store only the actual content, not the full message structure
-	}
-	
-	p.logger.Info("Publishing EXT message to external NATS stream",
-		append(utils.LoggerFields("publish_ext_stream", p.deployment, msg.ID, msg.Topic),
-			zap.String("external_topic", externalMsg.Topic),
-			zap.String("stream", p.config.NATS.ExternalStream.Name),
-			zap.String("source", msg.Source))...)
-	
-	// Store message in external NATS stream for external clients to consume via REST API
-	if err := p.natsPublisher.PublishMessageToStream(externalMsg, p.config.NATS.ExternalStream.Name); err != nil {
-		p.logger.Error("Failed to publish message to external NATS stream",
-			append(utils.LoggerFields("publish_ext_stream", p.deployment, msg.ID, msg.Topic),
-				utils.WithError(err))...)
-		return &types.DeliveryResult{
-			Success:    false,
-			MessageID:  msg.ID,
-			Timestamp:  time.Now().UTC(),
-			Error:      err.Error(),
-		}, err
-	}
-	
-	p.logger.Info("Message stored in external NATS stream from corporate API",
-		append(utils.LoggerFields("publish_ext_stream", p.deployment, msg.ID, msg.Topic),
-			zap.String("external_topic", externalMsg.Topic),
-			zap.String("source", msg.Source),
-			zap.String("stream", p.config.NATS.ExternalStream.Name))...)
-	
-	return &types.DeliveryResult{
-		Success:   true,
-		MessageID: msg.ID,
-		Timestamp: time.Now().UTC(),
-	}, nil
+	return p.utilities.StoreMessageInExternalStream(ctx, msg, msg.Source)
 }
 
 // processINTMessageFromArtemis processes messages for INT deployment that come from ArtemisMQ (Flow 1)
 func (p *Processor) processINTMessageFromArtemis(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error) {
-	p.logger.Info("Processing INT message from ArtemisMQ for external stream",
-		append(utils.LoggerFields("int_from_artemis", p.deployment, msg.ID, msg.Topic),
-			zap.String("source", msg.Source))...)
-	
-	// Flow 1: Message from ArtemisMQ (via corporate API) - store in external NATS stream for internal clients
-	
-	// Create a copy of the message with the correct subject for external stream
-	// Store only the actual content in the body to avoid duplication
-	externalMsg := &types.Message{
-		ID:           msg.ID,
-		Timestamp:    msg.Timestamp,
-		Topic:        "external." + msg.Topic,  // Use external subject pattern
-		Source:       msg.Source,
-		ClientSender: msg.ClientSender,
-		Headers:      msg.Headers,
-		Body:         msg.Body,  // Store only the actual content, not the full message structure
-	}
-	
-	p.logger.Info("Publishing INT message to external NATS stream",
-		append(utils.LoggerFields("publish_ext_stream", p.deployment, msg.ID, msg.Topic),
-			zap.String("external_topic", externalMsg.Topic),
-			zap.String("stream", p.config.NATS.ExternalStream.Name),
-			zap.String("source", msg.Source))...)
-	
-	// Store message in external NATS stream for internal clients to consume via REST API
-	if err := p.natsPublisher.PublishMessageToStream(externalMsg, p.config.NATS.ExternalStream.Name); err != nil {
-		p.logger.Error("Failed to publish message to external NATS stream",
-			append(utils.LoggerFields("publish_ext_stream", p.deployment, msg.ID, msg.Topic),
-				utils.WithError(err))...)
-		return &types.DeliveryResult{
-			Success:    false,
-			MessageID:  msg.ID,
-			Timestamp:  time.Now().UTC(),
-			Error:      err.Error(),
-		}, err
-	}
-	
-	p.logger.Info("Message stored in external NATS stream from ArtemisMQ",
-		append(utils.LoggerFields("publish_ext_stream", p.deployment, msg.ID, msg.Topic),
-			zap.String("external_topic", externalMsg.Topic),
-			zap.String("source", msg.Source),
-			zap.String("stream", p.config.NATS.ExternalStream.Name))...)
-	
-	return &types.DeliveryResult{
-		Success:   true,
-		MessageID: msg.ID,
-		Timestamp: time.Now().UTC(),
-	}, nil
+	return p.utilities.StoreMessageInExternalStream(ctx, msg, msg.Source)
 }
 
 // ValidateTopic checks if the topic is configured
@@ -395,14 +304,4 @@ func (p *Processor) HealthCheck(ctx context.Context) error {
 // GetDeploymentType returns the processor's deployment type
 func (p *Processor) GetDeploymentType() string {
 	return p.deployment
-}
-
-// IsEXTDeployment returns true if this is an EXT deployment
-func (p *Processor) IsEXTDeployment() bool {
-	return p.deployment == "ext"
-}
-
-// IsINTDeployment returns true if this is an INT deployment
-func (p *Processor) IsINTDeployment() bool {
-	return p.deployment == "int"
 }

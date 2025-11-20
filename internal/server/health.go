@@ -13,21 +13,24 @@ import (
 
 // HealthServer handles health checks and metrics
 type HealthServer struct {
-	config   *types.Config
-	logger   *zap.Logger
-	server   *http.Server
-	healthy  bool
-	mu       sync.RWMutex
-	startTime time.Time
+	config        *types.Config
+	logger        *zap.Logger
+	server        *http.Server
+	healthy       bool
+	mu            sync.RWMutex
+	startTime     time.Time
+	httpUtilities *HTTPUtilities
 }
 
 // NewHealthServer creates a new health server
 func NewHealthServer(config *types.Config, logger *zap.Logger) *HealthServer {
+	httpUtilities := NewHTTPUtilities(logger)
 	return &HealthServer{
-		config:    config,
-		logger:    logger,
-		healthy:   false,
-		startTime: time.Now(),
+		config:        config,
+		logger:        logger,
+		healthy:       false,
+		startTime:     time.Now(),
+		httpUtilities: httpUtilities,
 	}
 }
 
@@ -91,7 +94,7 @@ func (h *HealthServer) IsHealthy() bool {
 
 // healthHandler handles the main health check endpoint
 func (h *HealthServer) healthHandler(w http.ResponseWriter, r *http.Request) {
-	if !RequireMethod(w, r, http.MethodGet) {
+	if !h.httpUtilities.RequireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -117,12 +120,12 @@ func (h *HealthServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 	healthChecks := h.performHealthChecks(r.Context())
 	response["checks"] = healthChecks
 
-	JSONSuccess(w, response, status)
+	h.httpUtilities.JSONSuccess(w, response, status)
 }
 
 // metricsHandler handles metrics endpoint (placeholder for future metrics)
 func (h *HealthServer) metricsHandler(w http.ResponseWriter, r *http.Request) {
-	if !RequireMethod(w, r, http.MethodGet) {
+	if !h.httpUtilities.RequireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -133,7 +136,7 @@ func (h *HealthServer) metricsHandler(w http.ResponseWriter, r *http.Request) {
 
 // readyHandler handles readiness probe
 func (h *HealthServer) readyHandler(w http.ResponseWriter, r *http.Request) {
-	if !RequireMethod(w, r, http.MethodGet) {
+	if !h.httpUtilities.RequireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -149,7 +152,7 @@ func (h *HealthServer) readyHandler(w http.ResponseWriter, r *http.Request) {
 
 // liveHandler handles liveness probe
 func (h *HealthServer) liveHandler(w http.ResponseWriter, r *http.Request) {
-	if !RequireMethod(w, r, http.MethodGet) {
+	if !h.httpUtilities.RequireMethod(w, r, http.MethodGet) {
 		return
 	}
 
