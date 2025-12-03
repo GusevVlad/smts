@@ -100,3 +100,13 @@ ldap:
   skip_tls: false
   insecure_skip_verify: true
   use_http: true
+
+# Vault configuration for testing
+vault:
+  enabled: true
+  address: "http://vault-test:8200"
+  role_id: ""
+  secret_id: ""
+  path_prefix: "smts"
+  auto_renew: false
+  renewal_threshold: "5m"

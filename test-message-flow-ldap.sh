@@ -44,6 +44,7 @@ INT_TO_EXT_FLOW_SUCCESS=false
 SERVICES_HEALTHY=false
 LDAP_AUTH_SUCCESS=false
 LDAP_AUTH_FAILURE_TESTED=false
+VAULT_HEALTHY=false
 
 # Function to generate unique message ID
 generate_message_id() {
@@ -191,6 +192,20 @@ check_service_health() {
     fi
 }
 
+# Function to check Vault health
+check_vault_health() {
+    echo "Checking Vault health..."
+    local status_code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8200/v1/sys/health")
+    if [ "$status_code" -eq 200 ] || [ "$status_code" -eq 429 ]; then
+        echo "✅ Vault is healthy (status $status_code)"
+        return 0
+    else
+        echo "⚠️  Vault is not responding (HTTP $status_code)"
+        echo "   Vault integration may not work, but continuing..."
+        return 1
+    fi
+}
+
 # Function to check received messages with LDAP auth using new REST API
 check_received_messages() {
     local deployment=$1
@@ -263,6 +278,13 @@ test_ldap_auth_failure() {
 }
 
 # Main execution
+echo "0. Checking Vault health..."
+check_vault_health && {
+    VAULT_HEALTHY=true
+} || {
+    echo "⚠️  Vault health check failed, but continuing..."
+}
+echo
 echo "1. Checking if services are running..."
 echo "   EXT SMTS Health: http://localhost:18091/health"
 echo "   INT SMTS Health: http://localhost:18093/health"
@@ -412,6 +434,7 @@ echo
 echo "=== Test Summary ==="
 echo "Test Results:"
 echo "  ✅ Services Health Check: $([ "$SERVICES_HEALTHY" = true ] && echo "PASS" || echo "FAIL")"
+echo "  ✅ Vault Health Check: $([ "$VAULT_HEALTHY" = true ] && echo "PASS" || echo "FAIL")"
 echo "  ✅ LDAP Auth Failure Test: $([ "$LDAP_AUTH_FAILURE_TESTED" = true ] && echo "PASS" || echo "FAIL")"
 echo "  ✅ LDAP Auth Success: $([ "$LDAP_AUTH_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"
 echo "  ✅ EXT SMTS Send: $([ "$EXT_SEND_SUCCESS" = true ] && echo "PASS" || echo "FAIL")"

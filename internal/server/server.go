@@ -19,6 +19,7 @@ import (
 	"smts/internal/config"
 	"smts/internal/message"
 	"smts/internal/nats"
+	"smts/internal/vault"
 	"smts/pkg/types"
 	"smts/pkg/utils"
 
@@ -85,6 +86,9 @@ func NewServer(configPath string) (*Server, error) {
 			zap.String("deployment", cfg.Deployment.Type))
 	}
 
+	// Setup Vault secrets if enabled
+	vault.SetupVault(cfg, logger)
+
 	// Create NATS client
 	natsClient, err := nats.NewClient(&cfg.NATS, logger)
 	if err != nil {
@@ -127,7 +131,7 @@ func NewServer(configPath string) (*Server, error) {
 
 	httpUtilities := NewHTTPUtilities(logger)
 	messageRetriever := NewMessageRetriever(logger)
-	
+
 	server := &Server{
 		config:           cfg,
 		logger:           logger,
