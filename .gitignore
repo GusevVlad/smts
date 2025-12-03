@@ -6,3 +6,24 @@ ext-smts
 int-smts
 integration.test
 
+# Local environment files with secrets
+.env.ext-prod.local
+.env.int-prod.local
+.env.local
+*.local
+
+# Secret files and directories
+secrets/
+*.secret
+*.key
+vault-*.txt
+
+# Vault data directories
+dev-vault-data/
+vault-data/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo

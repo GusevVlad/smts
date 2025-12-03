@@ -15,6 +15,7 @@ type Config struct {
 	Health     HealthConfig     `mapstructure:"health" yaml:"health"`
 	Topics     TopicsConfig     `mapstructure:"topics" yaml:"topics"`
 	LDAP       LDAPConfig       `mapstructure:"ldap" yaml:"ldap"`
+	Vault      VaultConfig      `mapstructure:"vault" yaml:"vault"`
 }
 
 // DeploymentConfig contains deployment-specific settings
@@ -134,6 +135,17 @@ type LDAPConfig struct {
 	UseHTTP           bool     `mapstructure:"use_http" yaml:"use_http"`
 }
 
+// VaultConfig contains HashiCorp Vault configuration
+type VaultConfig struct {
+	Enabled          bool          `mapstructure:"enabled" yaml:"enabled"`
+	Address          string        `mapstructure:"address" yaml:"address"`
+	RoleID           string        `mapstructure:"role_id" yaml:"role_id"`
+	SecretID         string        `mapstructure:"secret_id" yaml:"secret_id"`
+	PathPrefix       string        `mapstructure:"path_prefix" yaml:"path_prefix"`
+	AutoRenew        bool          `mapstructure:"auto_renew" yaml:"auto_renew"`
+	RenewalThreshold time.Duration `mapstructure:"renewal_threshold" yaml:"renewal_threshold"`
+}
+
 // DefaultConfig returns a configuration with default values
 func DefaultConfig() *Config {
 	return &Config{
@@ -227,6 +239,15 @@ func DefaultConfig() *Config {
 			SkipTLS:           false,
 			InsecureSkipVerify: false,
 			UseHTTP:           false,
+		},
+		Vault: VaultConfig{
+			Enabled:          false,
+			Address:          "http://localhost:8200",
+			RoleID:           "",
+			SecretID:         "",
+			PathPrefix:       "smts",
+			AutoRenew:        true,
+			RenewalThreshold: 5 * time.Minute,
 		},
 	}
 }

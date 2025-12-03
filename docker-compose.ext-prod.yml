@@ -17,10 +17,24 @@ services:
       - .env.ext-prod
     environment:
       - CONFIG_FILE=/app/configs/ext-config.yaml
+      # Vault credentials must be provided via environment variables at runtime
+      - VAULT_ROLE_ID=${EXT_VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${EXT_VAULT_SECRET_ID}
+      # Optional: override VAULT_ADDR if needed
+      - VAULT_ADDR=${VAULT_ADDR:-http://vault:8200}
     volumes:
       - smts-ext-data:/app/data
       - ./configs/ext-config.yaml:/app/configs/ext-config.yaml:ro
       - ./configs/topics.yaml:/app/configs/topics.yaml:ro
+      # Mount secret files for more secure secret injection (optional)
+      - type: bind
+        source: ./secrets/ext-vault-role-id
+        target: /run/secrets/vault-role-id
+        read_only: true
+      - type: bind
+        source: ./secrets/ext-vault-secret-id
+        target: /run/secrets/vault-secret-id
+        read_only: true
     command: ["/app/bin/ext-smts", "--config", "/app/configs/ext-config.yaml"]
     healthcheck:
       test: ["CMD", "/app/bin/ext-smts", "--health-check", "--config", "/app/configs/ext-config.yaml"]

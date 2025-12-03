@@ -116,6 +116,9 @@ func (l *Loader) LoadConfig(configPath string) (*types.Config, error) {
 			zap.String("description", topic.Description))
 	}
 
+	// Load Vault credentials from environment variables and secret files
+	l.loadVaultCredentials(config)
+
 	// Validate configuration
 	if err := l.ValidateConfig(config); err != nil {
 		return nil, err
@@ -129,6 +132,54 @@ func (l *Loader) LoadConfig(configPath string) (*types.Config, error) {
 		zap.String("environment", config.Deployment.Environment))
 
 	return config, nil
+}
+
+// loadVaultCredentials loads Vault credentials from environment variables and secret files
+func (l *Loader) loadVaultCredentials(config *types.Config) {
+	// Vault address can come from environment variable
+	if vaultAddr := os.Getenv("VAULT_ADDR"); vaultAddr != "" {
+		config.Vault.Address = vaultAddr
+	}
+
+	// Role ID from environment variable
+	if roleID := os.Getenv("VAULT_ROLE_ID"); roleID != "" {
+		config.Vault.RoleID = roleID
+	}
+
+	// Secret ID from environment variable
+	if secretID := os.Getenv("VAULT_SECRET_ID"); secretID != "" {
+		config.Vault.SecretID = secretID
+	}
+
+	// If Role ID or Secret ID are still empty, try to read from secret files
+	// This supports Docker Swarm secrets and Kubernetes secrets
+	if config.Vault.RoleID == "" {
+		if data, err := os.ReadFile("/run/secrets/vault-role-id"); err == nil {
+			config.Vault.RoleID = strings.TrimSpace(string(data))
+			l.logger.Debug("Loaded Vault Role ID from secret file")
+		}
+	}
+
+	if config.Vault.SecretID == "" {
+		if data, err := os.ReadFile("/run/secrets/vault-secret-id"); err == nil {
+			config.Vault.SecretID = strings.TrimSpace(string(data))
+			l.logger.Debug("Loaded Vault Secret ID from secret file")
+		}
+	}
+
+	// Log Vault configuration status (without exposing secrets)
+	if config.Vault.Enabled {
+		if config.Vault.RoleID != "" && config.Vault.SecretID != "" {
+			l.logger.Info("Vault credentials loaded",
+				zap.String("address", config.Vault.Address),
+				zap.Bool("has_role_id", true),
+				zap.Bool("has_secret_id", true))
+		} else {
+			l.logger.Warn("Vault is enabled but Role ID or Secret ID is missing",
+				zap.Bool("has_role_id", config.Vault.RoleID != ""),
+				zap.Bool("has_secret_id", config.Vault.SecretID != ""))
+		}
+	}
 }
 
 // ValidateConfig validates the configuration
@@ -188,6 +239,15 @@ func (l *Loader) ValidateConfig(config *types.Config) error {
 		if config.Artemis.Queue == "" {
 			return types.NewSMTSError(types.ErrConfigValidate, "Artemis queue name is required for INT deployment")
 		}
+	}
+
+	// Validate Vault configuration if enabled
+	if config.Vault.Enabled {
+		if config.Vault.Address == "" {
+			return types.NewSMTSError(types.ErrConfigValidate, "Vault address is required when Vault is enabled")
+		}
+		// Note: We don't require RoleID/SecretID here because they might be loaded later
+		// or the application might use a different authentication method
 	}
 
 	// Validate topics configuration

@@ -76,4 +76,14 @@ ldap:
   skip_tls: false
   insecure_skip_verify: false
 
+# Vault Configuration
+vault:
+  enabled: true
+  address: "${VAULT_ADDR:-http://vault:8200}"
+  role_id: "${VAULT_ROLE_ID}"
+  secret_id: "${VAULT_SECRET_ID}"
+  path_prefix: "smts"
+  auto_renew: true
+  renewal_threshold: "5m"
+
 # Topics configuration will be loaded from separate topics.yaml file
