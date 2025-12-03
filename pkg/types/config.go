@@ -27,14 +27,14 @@ type DeploymentConfig struct {
 
 // NATSConfig contains NATS JetStream configuration
 type NATSConfig struct {
-	Embedded bool          `mapstructure:"embedded" yaml:"embedded"`
-	Host     string        `mapstructure:"host" yaml:"host"`
-	Port     int           `mapstructure:"port" yaml:"port"`
+	Embedded bool   `mapstructure:"embedded" yaml:"embedded"`
+	Host     string `mapstructure:"host" yaml:"host"`
+	Port     int    `mapstructure:"port" yaml:"port"`
 	// Client stream for messages from local clients
-	ClientStream   StreamConfig  `mapstructure:"client_stream" yaml:"client_stream"`
+	ClientStream   StreamConfig   `mapstructure:"client_stream" yaml:"client_stream"`
 	ClientConsumer ConsumerConfig `mapstructure:"client_consumer" yaml:"client_consumer"`
 	// External stream for messages from different network instances
-	ExternalStream   StreamConfig  `mapstructure:"external_stream" yaml:"external_stream"`
+	ExternalStream   StreamConfig   `mapstructure:"external_stream" yaml:"external_stream"`
 	ExternalConsumer ConsumerConfig `mapstructure:"external_consumer" yaml:"external_consumer"`
 }
 
@@ -69,6 +69,32 @@ type DLPConfig struct {
 	Endpoint string        `mapstructure:"endpoint" yaml:"endpoint"`
 	Timeout  time.Duration `mapstructure:"timeout" yaml:"timeout"`
 	Retry    RetryConfig   `mapstructure:"retry" yaml:"retry"`
+	// Provider specifies the DLP provider (legacy, traffic_monitor)
+	Provider string `mapstructure:"provider" yaml:"provider"`
+	// TrafficMonitor specific configuration
+	TrafficMonitor TrafficMonitorConfig `mapstructure:"traffic_monitor" yaml:"traffic_monitor"`
+}
+
+// TrafficMonitorConfig contains Traffic Monitor specific configuration
+type TrafficMonitorConfig struct {
+	// BaseURL is the base URL of Traffic Monitor (e.g., https://server.company.ru:9106)
+	BaseURL string `mapstructure:"base_url" yaml:"base_url"`
+	// AuthToken is the X-API-Auth-Token header value
+	AuthToken string `mapstructure:"auth_token" yaml:"auth_token"`
+	// CompanyId is the X-API-CompanyId header value
+	CompanyId string `mapstructure:"company_id" yaml:"company_id"`
+	// Version is the X-API-Version header value (default: "1.8")
+	Version string `mapstructure:"version" yaml:"version"`
+	// CaptureServerIP is the capture_server_ip attribute value
+	CaptureServerIP string `mapstructure:"capture_server_ip" yaml:"capture_server_ip"`
+	// CaptureServerFQDN is the capture_server_fqdn attribute value
+	CaptureServerFQDN string `mapstructure:"capture_server_fqdn" yaml:"capture_server_fqdn"`
+	// VerdictPollingEnabled enables polling for verdict after event push
+	VerdictPollingEnabled bool `mapstructure:"verdict_polling_enabled" yaml:"verdict_polling_enabled"`
+	// VerdictPollingInterval is the interval between polling attempts
+	VerdictPollingInterval time.Duration `mapstructure:"verdict_polling_interval" yaml:"verdict_polling_interval"`
+	// VerdictPollingTimeout is the total timeout for verdict polling
+	VerdictPollingTimeout time.Duration `mapstructure:"verdict_polling_timeout" yaml:"verdict_polling_timeout"`
 }
 
 // ArtemisConfig contains ArtemisMQ configuration
@@ -84,12 +110,12 @@ type ArtemisConfig struct {
 
 // AuthConfig contains authentication settings
 type AuthConfig struct {
-	Type        string `mapstructure:"type" yaml:"type"` // "api_key", "client_credentials"
-	APIKey      string `mapstructure:"api_key" yaml:"api_key"`
-	ClientID    string `mapstructure:"client_id" yaml:"client_id"`
+	Type         string `mapstructure:"type" yaml:"type"` // "api_key", "client_credentials"
+	APIKey       string `mapstructure:"api_key" yaml:"api_key"`
+	ClientID     string `mapstructure:"client_id" yaml:"client_id"`
 	ClientSecret string `mapstructure:"client_secret" yaml:"client_secret"`
-	TokenURL    string `mapstructure:"token_url" yaml:"token_url"`
-	Scopes      string `mapstructure:"scopes" yaml:"scopes"`
+	TokenURL     string `mapstructure:"token_url" yaml:"token_url"`
+	Scopes       string `mapstructure:"scopes" yaml:"scopes"`
 }
 
 // RetryConfig contains retry settings for external calls
@@ -119,20 +145,20 @@ type TopicsConfig struct {
 
 // LDAPConfig contains LDAP authentication and authorization configuration
 type LDAPConfig struct {
-	Enabled           bool     `mapstructure:"enabled" yaml:"enabled"`
-	Host              string   `mapstructure:"host" yaml:"host"`
-	Port              int      `mapstructure:"port" yaml:"port"`
-	Base              string   `mapstructure:"base" yaml:"base"`
-	BindDN            string   `mapstructure:"bind_dn" yaml:"bind_dn"`
-	BindPassword      string   `mapstructure:"bind_password" yaml:"bind_password"`
-	UserFilter        string   `mapstructure:"user_filter" yaml:"user_filter"`
-	GroupFilter       string   `mapstructure:"group_filter" yaml:"group_filter"`
-	Attributes        []string `mapstructure:"attributes" yaml:"attributes"`
-	ServerName        string   `mapstructure:"server_name" yaml:"server_name"`
-	UseSSL            bool     `mapstructure:"use_ssl" yaml:"use_ssl"`
-	SkipTLS           bool     `mapstructure:"skip_tls" yaml:"skip_tls"`
+	Enabled            bool     `mapstructure:"enabled" yaml:"enabled"`
+	Host               string   `mapstructure:"host" yaml:"host"`
+	Port               int      `mapstructure:"port" yaml:"port"`
+	Base               string   `mapstructure:"base" yaml:"base"`
+	BindDN             string   `mapstructure:"bind_dn" yaml:"bind_dn"`
+	BindPassword       string   `mapstructure:"bind_password" yaml:"bind_password"`
+	UserFilter         string   `mapstructure:"user_filter" yaml:"user_filter"`
+	GroupFilter        string   `mapstructure:"group_filter" yaml:"group_filter"`
+	Attributes         []string `mapstructure:"attributes" yaml:"attributes"`
+	ServerName         string   `mapstructure:"server_name" yaml:"server_name"`
+	UseSSL             bool     `mapstructure:"use_ssl" yaml:"use_ssl"`
+	SkipTLS            bool     `mapstructure:"skip_tls" yaml:"skip_tls"`
 	InsecureSkipVerify bool     `mapstructure:"insecure_skip_verify" yaml:"insecure_skip_verify"`
-	UseHTTP           bool     `mapstructure:"use_http" yaml:"use_http"`
+	UseHTTP            bool     `mapstructure:"use_http" yaml:"use_http"`
 }
 
 // VaultConfig contains HashiCorp Vault configuration
@@ -167,8 +193,8 @@ func DefaultConfig() *Config {
 				Replicas:  1,
 			},
 			ClientConsumer: ConsumerConfig{
-				DurableName:  "SMTS_CLIENT_CONSUMER",
-				AckPolicy:    "explicit",
+				DurableName:   "SMTS_CLIENT_CONSUMER",
+				AckPolicy:     "explicit",
 				DeliverPolicy: "all",
 			},
 			ExternalStream: StreamConfig{
@@ -180,8 +206,8 @@ func DefaultConfig() *Config {
 				Replicas:  1,
 			},
 			ExternalConsumer: ConsumerConfig{
-				DurableName:  "SMTS_EXTERNAL_CONSUMER",
-				AckPolicy:    "explicit",
+				DurableName:   "SMTS_EXTERNAL_CONSUMER",
+				AckPolicy:     "explicit",
 				DeliverPolicy: "all",
 			},
 		},
@@ -204,6 +230,18 @@ func DefaultConfig() *Config {
 				MaxAttempts: 2,
 				Backoff:     1 * time.Second,
 			},
+			Provider: "legacy",
+			TrafficMonitor: TrafficMonitorConfig{
+				BaseURL:                "",
+				AuthToken:              "",
+				CompanyId:              "",
+				Version:                "1.8",
+				CaptureServerIP:        "",
+				CaptureServerFQDN:      "",
+				VerdictPollingEnabled:  false,
+				VerdictPollingInterval: 5 * time.Second,
+				VerdictPollingTimeout:  30 * time.Second,
+			},
 		},
 		Artemis: ArtemisConfig{
 			Enabled: false,
@@ -225,20 +263,20 @@ func DefaultConfig() *Config {
 			Topics: make(map[string]TopicPermission),
 		},
 		LDAP: LDAPConfig{
-			Enabled:           false,
-			Host:              "localhost",
-			Port:              389,
-			Base:              "dc=example,dc=com",
-			BindDN:            "",
-			BindPassword:      "",
-			UserFilter:        "(uid=%s)",
-			GroupFilter:       "(member=%s)",
-			Attributes:        []string{"uid", "cn", "mail", "distinguishedName"},
-			ServerName:        "",
-			UseSSL:            false,
-			SkipTLS:           false,
+			Enabled:            false,
+			Host:               "localhost",
+			Port:               389,
+			Base:               "dc=example,dc=com",
+			BindDN:             "",
+			BindPassword:       "",
+			UserFilter:         "(uid=%s)",
+			GroupFilter:        "(member=%s)",
+			Attributes:         []string{"uid", "cn", "mail", "distinguishedName"},
+			ServerName:         "",
+			UseSSL:             false,
+			SkipTLS:            false,
 			InsecureSkipVerify: false,
-			UseHTTP:           false,
+			UseHTTP:            false,
 		},
 		Vault: VaultConfig{
 			Enabled:          false,

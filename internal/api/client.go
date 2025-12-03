@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,9 +10,59 @@ import (
 
 	"smts/pkg/types"
 	"smts/pkg/utils"
+
 	"github.com/go-resty/resty/v2"
 	"go.uber.org/zap"
 )
+
+// Traffic Monitor API structures
+type trafficMonitorAttribute struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type trafficMonitorContact struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type trafficMonitorContactWithMeta struct {
+	Contact trafficMonitorContact `json:"contact"`
+}
+
+type trafficMonitorIdentity struct {
+	IdentityID               int                             `json:"identity_id"`
+	IdentityType             int                             `json:"identity_type"`
+	IdentityContacts         []trafficMonitorContact         `json:"identity_contacts,omitempty"`
+	IdentityContactsWithMeta []trafficMonitorContactWithMeta `json:"identity_contacts_with_meta,omitempty"`
+	IdentityAttributes       []trafficMonitorAttribute       `json:"identity_attributes,omitempty"`
+}
+
+type trafficMonitorData struct {
+	DataID         int                       `json:"data_id"`
+	DataAttributes []trafficMonitorAttribute `json:"data_attributes,omitempty"`
+}
+
+type trafficMonitorEvent struct {
+	EvtClass       int                       `json:"evt_class"`
+	EvtService     string                    `json:"evt_service"`
+	EvtAttributes  []trafficMonitorAttribute `json:"evt_attributes"`
+	EvtSenders     []trafficMonitorIdentity  `json:"evt_senders"`
+	EvtReceivers   []trafficMonitorIdentity  `json:"evt_receivers"`
+	EvtData        []trafficMonitorData      `json:"evt_data"`
+	EvtDestination *trafficMonitorIdentity   `json:"evt_destination,omitempty"`
+}
+
+type trafficMonitorPushResponse struct {
+	Data struct {
+		DocumentID string `json:"document_id"`
+	} `json:"data"`
+}
+
+type trafficMonitorVerdictResponse struct {
+	Verdict string   `json:"verdict"`
+	Reasons []string `json:"reasons,omitempty"`
+}
 
 // APIClient defines the interface for corporate API operations
 type APIClient interface {
@@ -22,11 +73,11 @@ type APIClient interface {
 
 // Client represents a corporate API client
 type Client struct {
-	client      *resty.Client
-	apiConfig   *types.APIConfig
-	dlpConfig   *types.DLPConfig
-	logger      *zap.Logger
-	baseURL     string
+	client       *resty.Client
+	apiConfig    *types.APIConfig
+	dlpConfig    *types.DLPConfig
+	logger       *zap.Logger
+	baseURL      string
 	tokenManager *TokenManager
 }
 
@@ -40,11 +91,11 @@ func NewClient(apiConfig *types.APIConfig, dlpConfig *types.DLPConfig, logger *z
 	// Note: Authentication headers are set per-request to avoid conflicts
 
 	return &Client{
-		client:      client,
-		apiConfig:   apiConfig,
-		dlpConfig:   dlpConfig,
-		logger:      logger,
-		baseURL:     apiConfig.BaseURL,
+		client:       client,
+		apiConfig:    apiConfig,
+		dlpConfig:    dlpConfig,
+		logger:       logger,
+		baseURL:      apiConfig.BaseURL,
 		tokenManager: nil, // No longer needed for client_credentials header-based auth
 	}
 }
@@ -80,10 +131,10 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 			messageID = msg.ID
 		}
 		return &types.DeliveryResult{
-			Success:    false,
-			MessageID:  messageID,
-			Timestamp:  time.Now().UTC(),
-			Error:      err.Error(),
+			Success:   false,
+			MessageID: messageID,
+			Timestamp: time.Now().UTC(),
+			Error:     err.Error(),
 		}, err
 	}
 
@@ -114,10 +165,10 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 	// Set authentication headers
 	if err := c.setAuthHeaders(ctx, request); err != nil {
 		return &types.DeliveryResult{
-			Success:    false,
-			MessageID:  msg.ID,
-			Timestamp:  time.Now().UTC(),
-			Error:      err.Error(),
+			Success:   false,
+			MessageID: msg.ID,
+			Timestamp: time.Now().UTC(),
+			Error:     err.Error(),
 		}, err
 	}
 
@@ -194,10 +245,10 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 				utils.WithDuration(duration))...)
 
 		return &types.DeliveryResult{
-			Success:    false,
-			MessageID:  msg.ID,
-			Timestamp:  time.Now().UTC(),
-			Error:      err.Error(),
+			Success:   false,
+			MessageID: msg.ID,
+			Timestamp: time.Now().UTC(),
+			Error:     err.Error(),
 		}, err
 	}
 
@@ -210,10 +261,10 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 				utils.WithDuration(duration))...)
 
 		return &types.DeliveryResult{
-			Success:    false,
-			MessageID:  msg.ID,
-			Timestamp:  time.Now().UTC(),
-			Error:      err.Error(),
+			Success:   false,
+			MessageID: msg.ID,
+			Timestamp: time.Now().UTC(),
+			Error:     err.Error(),
 		}, err
 	}
 
@@ -234,6 +285,26 @@ func (c *Client) ValidateMessage(ctx context.Context, msg *types.Message) (*type
 	operation := "validate_message"
 	startTime := time.Now()
 
+	if !c.dlpConfig.Enabled {
+		// If DLP is disabled, return a mock approved response
+		return &types.DLPValidationResponse{
+			Approved:  true,
+			MessageID: msg.ID,
+			Reasons:   []string{},
+		}, nil
+	}
+
+	// Branch based on provider
+	switch c.dlpConfig.Provider {
+	case "traffic_monitor":
+		return c.validateMessageTrafficMonitor(ctx, msg, operation, startTime)
+	default: // "legacy" or empty
+		return c.validateMessageLegacy(ctx, msg, operation, startTime)
+	}
+}
+
+// validateMessageLegacy sends a message for DLP validation using the legacy endpoint
+func (c *Client) validateMessageLegacy(ctx context.Context, msg *types.Message, operation string, startTime time.Time) (*types.DLPValidationResponse, error) {
 	// Build the DLP validation request
 	dlpRequest := &types.DLPValidationRequest{
 		MessageID: msg.ID,
@@ -248,13 +319,6 @@ func (c *Client) ValidateMessage(ctx context.Context, msg *types.Message) (*type
 
 	// Build the endpoint URL - use DLP endpoint if DLP is enabled
 	endpoint := c.dlpConfig.Endpoint
-	if !c.dlpConfig.Enabled {
-		// If DLP is disabled, return a mock approved response
-		return &types.DLPValidationResponse{
-			Approved: true,
-			Reasons:  []string{},
-		}, nil
-	}
 
 	// Prepare the request
 	request := c.client.R().
@@ -344,6 +408,281 @@ func (c *Client) ValidateMessage(ctx context.Context, msg *types.Message) (*type
 			utils.WithDuration(duration))...)
 
 	return &dlpResponse, nil
+}
+
+// validateMessageTrafficMonitor sends a message for DLP validation using Traffic Monitor API
+func (c *Client) validateMessageTrafficMonitor(ctx context.Context, msg *types.Message, operation string, startTime time.Time) (*types.DLPValidationResponse, error) {
+	// Build Traffic Monitor event
+	event, err := c.buildTrafficMonitorEvent(msg)
+	if err != nil {
+		return nil, types.WrapSMTSError(err, types.ErrDLPValidation, "Failed to build Traffic Monitor event")
+	}
+
+	// Marshal event to JSON
+	eventJSON, err := json.Marshal(event)
+	if err != nil {
+		return nil, types.WrapSMTSError(err, types.ErrDLPValidation, "Failed to marshal Traffic Monitor event")
+	}
+
+	// Build endpoint URL
+	endpoint := c.dlpConfig.TrafficMonitor.BaseURL + "/push/event"
+
+	// Prepare multipart request
+	request := c.client.R().
+		SetContext(ctx).
+		SetHeader("Content-Type", "multipart/form-data").
+		SetMultipartField("event", "", "application/json", bytes.NewReader(eventJSON))
+
+	// Set Traffic Monitor authentication headers
+	c.setTrafficMonitorAuthHeaders(request)
+
+	// Execute the request with retry
+	var resp *resty.Response
+	retryConfig := utils.RetryConfig{
+		MaxAttempts: 2,
+		Backoff:     1 * time.Second,
+		Jitter:      true,
+	}
+
+	err = utils.Retry(ctx, retryConfig, func(attempt int) error {
+		c.logger.Debug("Sending message to Traffic Monitor",
+			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+				zap.Int("attempt", attempt),
+				zap.String("endpoint", endpoint))...)
+
+		resp, err = request.Post(endpoint)
+		if err != nil {
+			return types.WrapSMTSError(err, types.ErrDLPConnection, "Failed to connect to Traffic Monitor")
+		}
+
+		// Check HTTP status code
+		if resp.StatusCode() >= 400 {
+			if resp.StatusCode() == http.StatusUnauthorized {
+				return types.NewSMTSError(types.ErrAPIAuth, "Traffic Monitor authentication failed")
+			} else if resp.StatusCode() >= 500 {
+				return types.WrapSMTSError(
+					fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String()),
+					types.ErrDLPRequest,
+					"Server error from Traffic Monitor",
+				)
+			} else {
+				return types.WrapSMTSError(
+					fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String()),
+					types.ErrDLPRequest,
+					"Client error from Traffic Monitor",
+				)
+			}
+		}
+
+		return nil
+	}, c.logger, operation)
+
+	duration := time.Since(startTime).Milliseconds()
+
+	if err != nil {
+		c.logger.Error("Failed to validate message via Traffic Monitor",
+			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+				utils.WithError(err),
+				utils.WithDuration(duration))...)
+		return nil, err
+	}
+
+	// Parse push response
+	var pushResp trafficMonitorPushResponse
+	if err := json.Unmarshal(resp.Body(), &pushResp); err != nil {
+		c.logger.Error("Failed to parse Traffic Monitor push response",
+			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+				utils.WithError(err))...)
+		return nil, types.WrapSMTSError(err, types.ErrDLPValidation, "Failed to parse Traffic Monitor push response")
+	}
+
+	documentID := pushResp.Data.DocumentID
+	if documentID == "" {
+		return nil, types.NewSMTSError(types.ErrDLPValidation, "Empty document ID received from Traffic Monitor")
+	}
+
+	// If verdict polling is enabled, poll for verdict
+	if c.dlpConfig.TrafficMonitor.VerdictPollingEnabled {
+		verdictResp, err := c.pollVerdict(ctx, documentID, operation, msg)
+		if err != nil {
+			return nil, err
+		}
+		return verdictResp, nil
+	}
+
+	// If polling is disabled, assume approval (or maybe we should treat as unknown?)
+	// For safety, we'll treat as approved but log a warning.
+	c.logger.Warn("Verdict polling disabled, assuming message approved",
+		append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+			zap.String("document_id", documentID))...)
+
+	return &types.DLPValidationResponse{
+		Approved:  true,
+		MessageID: msg.ID,
+		Reasons:   []string{},
+	}, nil
+}
+
+// buildTrafficMonitorEvent constructs a Traffic Monitor event from a message
+func (c *Client) buildTrafficMonitorEvent(msg *types.Message) (*trafficMonitorEvent, error) {
+	// Use current time for capture timestamp
+	captureTime := time.Now().Format(time.RFC3339)
+
+	// Build evt_attributes
+	evtAttributes := []trafficMonitorAttribute{
+		{Name: "event_name", Value: "SMTS Message"},
+		{Name: "capture_ts", Value: captureTime},
+		{Name: "capture_server_ip", Value: c.dlpConfig.TrafficMonitor.CaptureServerIP},
+		{Name: "capture_server_fqdn", Value: c.dlpConfig.TrafficMonitor.CaptureServerFQDN},
+		{Name: "message_id", Value: msg.ID},
+		{Name: "topic", Value: msg.Topic},
+		{Name: "source", Value: msg.Source},
+	}
+
+	// Build evt_senders (simplified - single sender representing SMTS)
+	evtSenders := []trafficMonitorIdentity{
+		{
+			IdentityID:   1,
+			IdentityType: 0, // user
+			IdentityContactsWithMeta: []trafficMonitorContactWithMeta{
+				{
+					Contact: trafficMonitorContact{
+						Name:  "auth",
+						Value: "smts@system",
+					},
+				},
+			},
+		},
+	}
+
+	// Build evt_receivers (empty for now)
+	evtReceivers := []trafficMonitorIdentity{}
+
+	// Build evt_data with message body
+	evtData := []trafficMonitorData{
+		{
+			DataID: 1,
+			DataAttributes: []trafficMonitorAttribute{
+				{Name: "filename", Value: "message.json"},
+				{Name: "content_type", Value: "application/json"},
+				{Name: "size", Value: fmt.Sprintf("%d", len(msg.Body))},
+			},
+		},
+	}
+
+	event := &trafficMonitorEvent{
+		EvtClass:      3, // web_common
+		EvtService:    "smts",
+		EvtAttributes: evtAttributes,
+		EvtSenders:    evtSenders,
+		EvtReceivers:  evtReceivers,
+		EvtData:       evtData,
+		// EvtDestination omitted
+	}
+	return event, nil
+}
+
+// setTrafficMonitorAuthHeaders sets the required authentication headers for Traffic Monitor API
+func (c *Client) setTrafficMonitorAuthHeaders(request *resty.Request) {
+	if token := c.dlpConfig.TrafficMonitor.AuthToken; token != "" {
+		request.SetHeader("X-API-Auth-Token", token)
+	}
+	if companyID := c.dlpConfig.TrafficMonitor.CompanyId; companyID != "" {
+		request.SetHeader("X-API-CompanyId", companyID)
+	}
+	version := c.dlpConfig.TrafficMonitor.Version
+	if version == "" {
+		version = "1.8"
+	}
+	request.SetHeader("X-API-Version", version)
+}
+
+// pollVerdict polls the Traffic Monitor DataExport API for verdict of a document
+func (c *Client) pollVerdict(ctx context.Context, documentID string, operation string, msg *types.Message) (*types.DLPValidationResponse, error) {
+	// Build endpoint URL
+	endpoint := c.dlpConfig.TrafficMonitor.BaseURL + "/xapi/event/verdict"
+	// Use current date in YYYY-MM-DD format
+	date := time.Now().Format("2006-01-02")
+
+	// Prepare request
+	request := c.client.R().
+		SetContext(ctx).
+		SetQueryParam("documentId", documentID).
+		SetQueryParam("date", date)
+
+	c.setTrafficMonitorAuthHeaders(request)
+
+	// Poll with timeout and interval
+	timeout := c.dlpConfig.TrafficMonitor.VerdictPollingTimeout
+	interval := c.dlpConfig.TrafficMonitor.VerdictPollingInterval
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+	if interval == 0 {
+		interval = 5 * time.Second
+	}
+
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+
+	for time.Now().Before(deadline) {
+		c.logger.Debug("Polling verdict from Traffic Monitor",
+			append(utils.LoggerFields(operation, "", msg.ID, msg.Topic),
+				zap.String("document_id", documentID))...)
+
+		resp, err := request.Get(endpoint)
+		if err != nil {
+			lastErr = types.WrapSMTSError(err, types.ErrDLPConnection, "Failed to connect to Traffic Monitor verdict endpoint")
+			time.Sleep(interval)
+			continue
+		}
+
+		if resp.StatusCode() >= 400 {
+			if resp.StatusCode() == http.StatusNotFound {
+				// Verdict not yet ready, sleep and retry
+				time.Sleep(interval)
+				continue
+			}
+			lastErr = types.NewSMTSError(types.ErrDLPRequest, fmt.Sprintf("Verdict endpoint returned HTTP %d", resp.StatusCode()))
+			time.Sleep(interval)
+			continue
+		}
+
+		// Parse verdict response
+		var verdictResp trafficMonitorVerdictResponse
+		if err := json.Unmarshal(resp.Body(), &verdictResp); err != nil {
+			lastErr = types.WrapSMTSError(err, types.ErrDLPValidation, "Failed to parse verdict response")
+			time.Sleep(interval)
+			continue
+		}
+
+		// Map verdict to DLPValidationResponse
+		approved := false
+		if verdictResp.Verdict == "approved" {
+			approved = true
+		} else if verdictResp.Verdict == "rejected" {
+			approved = false
+		} else {
+			// Unknown verdict, treat as rejected with reason
+			return &types.DLPValidationResponse{
+				Approved:  false,
+				MessageID: msg.ID,
+				Reasons:   []string{fmt.Sprintf("Unknown verdict: %s", verdictResp.Verdict)},
+			}, nil
+		}
+
+		return &types.DLPValidationResponse{
+			Approved:  approved,
+			MessageID: msg.ID,
+			Reasons:   verdictResp.Reasons,
+		}, nil
+	}
+
+	// Timeout reached
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, types.NewSMTSError(types.ErrDLPValidation, "Timeout waiting for verdict from Traffic Monitor")
 }
 
 // validateMessage validates a message before delivery

@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"smts/internal/api"
 	"smts/pkg/types"
+
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
@@ -17,7 +19,7 @@ import (
 func TestAPIClient_DeliverMessage_Success(t *testing.T) {
 	// Create test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/monterra.event", r.URL.Path)
+		assert.Equal(t, "/smts/message", r.URL.Path)
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		assert.Equal(t, "test-message-123", r.Header.Get("X-SMTS-Message-ID"))
 		assert.Equal(t, "test", r.Header.Get("X-SMTS-Source"))
@@ -350,7 +352,7 @@ func TestAPIClient_MessageValidation(t *testing.T) {
 
 func TestAPIClient_Authentication(t *testing.T) {
 	apiKeyReceived := false
-	
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify API key header
 		receivedAPIKey := r.Header.Get("X-API-Key")
@@ -358,7 +360,7 @@ func TestAPIClient_Authentication(t *testing.T) {
 		t.Logf("X-API-Key header value: '%s'", receivedAPIKey)
 		t.Logf("Request URL: %s", r.URL.String())
 		t.Logf("Request Method: %s", r.Method)
-		
+
 		if receivedAPIKey == "test-api-key" {
 			apiKeyReceived = true
 			t.Log("API key correctly received!")
@@ -404,8 +406,78 @@ func TestAPIClient_Authentication(t *testing.T) {
 
 	t.Logf("API call result: success=%v, error=%v", result.Success, err)
 	t.Logf("API key received by server: %v", apiKeyReceived)
-	
+
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.True(t, apiKeyReceived, "API key should have been received by the server")
+}
+
+func TestAPIClient_ValidateMessage_TrafficMonitor_Success(t *testing.T) {
+	// Mock Traffic Monitor push endpoint
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/push/event", r.URL.Path)
+		assert.True(t, strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data"))
+		assert.Equal(t, "test-token", r.Header.Get("X-API-Auth-Token"))
+		assert.Equal(t, "test-company", r.Header.Get("X-API-CompanyId"))
+		assert.Equal(t, "1.8", r.Header.Get("X-API-Version"))
+
+		// Parse multipart form
+		err := r.ParseMultipartForm(10 << 20)
+		assert.NoError(t, err)
+
+		eventField := r.MultipartForm.Value["event"]
+		assert.NotEmpty(t, eventField)
+		var event map[string]interface{}
+		err = json.Unmarshal([]byte(eventField[0]), &event)
+		assert.NoError(t, err)
+		assert.Equal(t, "smts", event["evt_service"])
+		assert.Equal(t, float64(3), event["evt_class"])
+
+		// Return success response with document ID
+		response := map[string]interface{}{
+			"data": map[string]string{
+				"document_id": "test-doc-123",
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewDevelopment()
+	config := &types.APIConfig{
+		BaseURL: server.URL,
+		Timeout: 30 * time.Second,
+	}
+
+	client := api.NewClient(config, &types.DLPConfig{
+		Enabled:  true,
+		Provider: "traffic_monitor",
+		TrafficMonitor: types.TrafficMonitorConfig{
+			BaseURL:                server.URL,
+			AuthToken:              "test-token",
+			CompanyId:              "test-company",
+			Version:                "1.8",
+			CaptureServerIP:        "127.0.0.1",
+			CaptureServerFQDN:      "localhost",
+			VerdictPollingEnabled:  false,
+			VerdictPollingInterval: 5 * time.Second,
+			VerdictPollingTimeout:  30 * time.Second,
+		},
+	}, logger)
+
+	msg := &types.Message{
+		ID:        "test-message-123",
+		Timestamp: time.Now().UTC(),
+		Topic:     "monterra.event",
+		Source:    "test",
+		Body:      []byte(`{"sensitive": "data"}`),
+	}
+
+	result, err := client.ValidateMessage(context.Background(), msg)
+
+	assert.NoError(t, err)
+	assert.True(t, result.Approved)
+	assert.Equal(t, "test-message-123", result.MessageID)
 }

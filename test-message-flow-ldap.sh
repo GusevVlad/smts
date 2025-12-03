@@ -195,7 +195,7 @@ check_service_health() {
 # Function to check Vault health
 check_vault_health() {
     echo "Checking Vault health..."
-    local status_code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8200/v1/sys/health")
+    local status_code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:18200/v1/sys/health")
     if [ "$status_code" -eq 200 ] || [ "$status_code" -eq 429 ]; then
         echo "✅ Vault is healthy (status $status_code)"
         return 0

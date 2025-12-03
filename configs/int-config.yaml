@@ -37,6 +37,17 @@ dlp:
   retry:
     max_attempts: 2
     backoff: "1s"
+  provider: "legacy"  # Options: "legacy", "traffic_monitor"
+  traffic_monitor:
+    base_url: ""  # e.g., "https://server.company.ru:9106"
+    auth_token: "${TRAFFIC_MONITOR_AUTH_TOKEN}"
+    company_id: "${TRAFFIC_MONITOR_COMPANY_ID}"
+    version: "1.8"
+    capture_server_ip: ""
+    capture_server_fqdn: ""
+    verdict_polling_enabled: false
+    verdict_polling_interval: "5s"
+    verdict_polling_timeout: "30s"
 
 artemis:
   enabled: true
