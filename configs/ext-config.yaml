@@ -10,7 +10,7 @@ nats:
   port: 4222
   stream:
     name: "SMTS_EXT"
-    subjects: ["monterra.>", "pact_update.>"]
+    subjects: ["monterra", "pact_update", "signature"]
     retention: "workqueue"
     max_age: "24h"
     storage: "file"

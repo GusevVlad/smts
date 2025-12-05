@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,11 +20,20 @@ import (
 func TestAPIClient_DeliverMessage_Success(t *testing.T) {
 	// Create test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/smts/message", r.URL.Path)
+		assert.Equal(t, "/smts/monterra", r.URL.Path)
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		assert.Equal(t, "test-message-123", r.Header.Get("X-SMTS-Message-ID"))
 		assert.Equal(t, "test", r.Header.Get("X-SMTS-Source"))
 		assert.Equal(t, "value", r.Header.Get("custom-header"))
+
+		// Verify request body is raw JSON (same as message body)
+		body, err := io.ReadAll(r.Body)
+		assert.NoError(t, err)
+		var expectedBody map[string]interface{}
+		json.Unmarshal([]byte(`{"event":"test_event","data":"test_data"}`), &expectedBody)
+		var actualBody map[string]interface{}
+		json.Unmarshal(body, &actualBody)
+		assert.Equal(t, expectedBody, actualBody)
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
@@ -68,6 +78,12 @@ func TestAPIClient_DeliverMessage_RetrySuccess(t *testing.T) {
 	attempt := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempt++
+		// Verify endpoint path
+		assert.Equal(t, "/smts/monterra", r.URL.Path)
+		// Verify request body is raw JSON
+		body, err := io.ReadAll(r.Body)
+		assert.NoError(t, err)
+		assert.JSONEq(t, `{"test": "data"}`, string(body))
 		if attempt == 1 {
 			// First attempt fails
 			w.WriteHeader(http.StatusInternalServerError)
@@ -109,6 +125,12 @@ func TestAPIClient_DeliverMessage_RetrySuccess(t *testing.T) {
 
 func TestAPIClient_DeliverMessage_ClientError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify endpoint path
+		assert.Equal(t, "/smts/monterra", r.URL.Path)
+		// Verify request body is raw JSON
+		body, err := io.ReadAll(r.Body)
+		assert.NoError(t, err)
+		assert.JSONEq(t, `{"test": "data"}`, string(body))
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Bad Request"))
 	}))
@@ -354,6 +376,12 @@ func TestAPIClient_Authentication(t *testing.T) {
 	apiKeyReceived := false
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify endpoint path
+		assert.Equal(t, "/smts/monterra", r.URL.Path)
+		// Verify request body is raw JSON
+		body, err := io.ReadAll(r.Body)
+		assert.NoError(t, err)
+		assert.JSONEq(t, `{"test": "data"}`, string(body))
 		// Verify API key header
 		receivedAPIKey := r.Header.Get("X-API-Key")
 		t.Logf("Received headers: %v", r.Header)

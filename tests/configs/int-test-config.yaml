@@ -11,7 +11,7 @@ nats:
   # Client stream for messages from local clients (Flow 2)
   client_stream:
     name: "SMTS_INT_CLIENT"
-    subjects: ["test.monterra.>", "test.pact_update.>"]
+    subjects: ["test.monterra.>", "test.pact_update.>", "signature"]
     retention: "workqueue"
     max_age: "1h"
     storage: "memory"  # Use memory for faster tests
@@ -23,7 +23,7 @@ nats:
   # External stream for messages from different network instances (Flow 1)
   external_stream:
     name: "SMTS_INT_EXTERNAL"
-    subjects: ["external.test.monterra.>", "external.test.pact_update.>"]
+    subjects: ["external.test.monterra", "external.test.monterra.>", "external.test.pact_update.>", "external.signature"]
     retention: "workqueue"
     max_age: "1h"
     storage: "memory"
@@ -86,8 +86,14 @@ topics:
   test.monterra.event:
     description: "Test monterra events"
   
-  test.pact_update.event:
+  test.monterra:
+    description: "Test monterra events (without .event suffix)"
+
+  test.pact_update:
     description: "Test pact update events"
+
+  signature:
+    description: "Signature events"
 
 # LDAP configuration for testing (enabled for test environment)
 ldap:

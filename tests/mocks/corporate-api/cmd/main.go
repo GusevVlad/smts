@@ -81,7 +81,14 @@ func (api *CorporateAPI) HandleRoot(w http.ResponseWriter, r *http.Request) {
 
 // HandleMessageFromEXT handles messages from EXT-SMTS (Flow 1)
 func (api *CorporateAPI) HandleMessageFromEXT(w http.ResponseWriter, r *http.Request) {
-	topic := r.URL.Path[1:] // Remove leading slash
+	// Extract topic from path, handling both /{topic} and /smts/{topic} patterns
+	path := r.URL.Path
+	var topic string
+	if strings.HasPrefix(path, "/smts/") {
+		topic = path[6:] // Remove "/smts/" prefix
+	} else {
+		topic = path[1:] // Remove leading slash
+	}
 
 	// Authenticate request
 	if !api.authenticateRequest(r) {
@@ -322,9 +329,9 @@ func (api *CorporateAPI) authenticateRequest(r *http.Request) bool {
 		}
 	}
 
-	// For /smts/message endpoint, also check for client credentials authentication
+	// For /smts/* endpoints, also check for client credentials authentication
 	// This is needed because EXT-SMTS uses client_credentials auth type
-	if r.URL.Path == "/smts/message" {
+	if strings.HasPrefix(r.URL.Path, "/smts/") {
 		// Check if we have client credentials headers
 		clientID := r.Header.Get("X-Client-ID")
 		clientSecret := r.Header.Get("X-Client-Secret")
@@ -332,7 +339,6 @@ func (api *CorporateAPI) authenticateRequest(r *http.Request) bool {
 		if clientID == "test-client-id" && clientSecret == "test-client-secret" {
 			return true
 		}
-
 	}
 
 	return false

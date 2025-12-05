@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"smts/pkg/types"
@@ -119,6 +120,20 @@ func (c *Client) setAuthHeaders(ctx context.Context, request *resty.Request) err
 	return nil
 }
 
+// mapTopicToEndpoint maps internal topic names to corporate API endpoint paths
+func (c *Client) mapTopicToEndpoint(topic string) string {
+	// Remove .event suffix if present
+	endpoint := topic
+	if strings.HasSuffix(endpoint, ".event") {
+		endpoint = endpoint[:len(endpoint)-len(".event")]
+	}
+	// Specific overrides
+	if endpoint == "signature" {
+		endpoint = "artifactsign"
+	}
+	return endpoint
+}
+
 // DeliverMessage delivers a message to the corporate API
 func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types.DeliveryResult, error) {
 	operation := "deliver_message"
@@ -138,23 +153,12 @@ func (c *Client) DeliverMessage(ctx context.Context, msg *types.Message) (*types
 		}, err
 	}
 
-	// Build the endpoint URL - use the new /smts/message endpoint
-	endpoint := fmt.Sprintf("%s/smts/message", c.baseURL)
+	// Build the endpoint URL - use the new /smts/{topic} endpoint with mapping
+	mappedTopic := c.mapTopicToEndpoint(msg.Topic)
+	endpoint := fmt.Sprintf("%s/smts/%s", c.baseURL, mappedTopic)
 
-	// Parse the message body to extract the actual data
-	var messageData map[string]interface{}
-	if err := json.Unmarshal(msg.Body, &messageData); err != nil {
-		// If parsing fails, use the raw body as data
-		messageData = map[string]interface{}{
-			"content": string(msg.Body),
-		}
-	}
-
-	// Prepare the request body for /smts/message endpoint
-	requestBody := map[string]interface{}{
-		"topic": msg.Topic,
-		"data":  messageData,
-	}
+	// Use the raw message body as request body (no wrapper)
+	requestBody := msg.Body
 
 	// Prepare the request
 	request := c.client.R().
