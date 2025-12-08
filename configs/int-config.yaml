@@ -52,8 +52,9 @@ dlp:
 artemis:
   enabled: true
   host: "artemis"
-  port: 61613
-  queue: "SMTS_INT_QUEUE"
+  port: 1424
+  queue: "_INT_SMTS"
+  publish_queue: "_EXT_SMTS"
   username: "${ARTEMIS_USER}"
   password: "${ARTEMIS_PASSWORD}"
 
