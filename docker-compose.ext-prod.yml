@@ -10,9 +10,7 @@ services:
     restart: unless-stopped
     ports:
       - "4222:4222"  # NATS server port
-      - "8080:8080"  # Health server port
-      - "8082:8082"  # HTTP server port (send)
-      - "8081:8081"  # Message API port (receive)
+      # HTTP ports are not exposed externally; accessed via nginx
     env_file:
       - .env.ext-prod
     environment:
@@ -42,6 +40,25 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Nginx reverse proxy for external SMTS
+  nginx-ext:
+    image: nginx:alpine
+    container_name: nginx-ext
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/ext/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl/ext:/etc/nginx/ssl:ro
+    depends_on:
+      - smts-ext-prod
     logging:
       driver: "json-file"
       options:

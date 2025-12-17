@@ -15,6 +15,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - smts-test
 
 
   # Corporate API service for testing message flows
@@ -40,6 +42,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - smts-test
 
   # Test DLP service for INT SMTS tests
   dlp-mock:
@@ -51,6 +55,8 @@ services:
       - MOCKSERVER_LOG_LEVEL=INFO
       - MOCKSERVER_SERVER_PORT=1080
     # MockServer will start automatically with the environment variable
+    networks:
+      - smts-test
 
   # DLP MockServer initialization container
   dlp-mock-init:
@@ -100,6 +106,8 @@ services:
         
         echo 'DLP MockServer expectations configured successfully!'
       "
+    networks:
+      - smts-test
 
 
   # LDAP Mock Server for testing
@@ -117,6 +125,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - smts-test
 
   # Vault dev server for testing
   vault-test:
@@ -134,6 +144,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - smts-test
 
   # Vault initialization container to write test secrets
   vault-test-init:
@@ -171,6 +183,8 @@ services:
           DLP_API_KEY=test-api-key &&
         echo 'Test secrets written successfully!'
       "
+    networks:
+      - smts-test
 
   # EXT SMTS test service
   smts-ext-test:
@@ -187,8 +201,7 @@ services:
     ports:
       - "14222:14222"  # NATS server port for testing
       - "18091:18081"  # Health server port for testing
-      - "18092:18082"  # HTTP server port for testing (send)
-      - "19081:19081"  # Message API port for testing (receive)
+      # HTTP ports are proxied via nginx
     environment:
       - CONFIG_FILE=/app/tests/configs/ext-test-config.yaml
       - VAULT_ADDR=http://vault-test:8200
@@ -202,6 +215,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      smts-test:
+        aliases:
+          - smts-ext-prod
 
   # INT SMTS test service
   smts-int-test:
@@ -222,8 +239,7 @@ services:
     ports:
       - "14223:14223"  # NATS server port for testing
       - "18093:18083"  # Health server port for testing
-      - "18094:18084"  # HTTP server port for testing (send)
-      - "19083:19083"  # Message API port for testing (receive)
+      # HTTP ports are proxied via nginx
     environment:
       - CONFIG_FILE=/app/tests/configs/int-test-config.yaml
       - VAULT_ADDR=http://vault-test:8200
@@ -237,7 +253,40 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      smts-test:
+        aliases:
+          - smts-int-prod
 
+  # Nginx reverse proxy for external SMTS test
+  nginx-ext-test:
+    image: nginx:alpine
+    container_name: nginx-ext-test
+    ports:
+      - "18092:443"   # HTTPS for HTTP server (send/receive)
+      - "19081:443"   # HTTPS for message API (different host port)
+    volumes:
+      - ./nginx/ext/nginx.test.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl/ext:/etc/nginx/ssl:ro
+    depends_on:
+      - smts-ext-test
+    networks:
+      - smts-test
+
+  # Nginx reverse proxy for internal SMTS test
+  nginx-int-test:
+    image: nginx:alpine
+    container_name: nginx-int-test
+    ports:
+      - "18094:443"   # HTTPS for HTTP server (send/receive)
+      - "19083:443"   # HTTPS for message API
+    volumes:
+      - ./nginx/int/nginx.test.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl/int:/etc/nginx/ssl:ro
+    depends_on:
+      - smts-int-test
+    networks:
+      - smts-test
 
   smts-test-runner:
     build:
@@ -274,6 +323,12 @@ services:
         echo '=== Running Integration Tests ===' &&
         /app/bin/run-integration-tests.sh 2>&1 | tee /app/logs/integration-tests.log
       "
+    networks:
+      - smts-test
 
 volumes:
   artemis-test-data:
+
+networks:
+  smts-test:
+    driver: bridge
